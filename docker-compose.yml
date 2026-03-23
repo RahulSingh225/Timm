@@ -1,0 +1,21 @@
+version: "3.8"
+
+services:
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: ai_prop_desk_queue
+    restart: always
+    environment:
+      - RABBITMQ_DEFAULT_USER=${RABBITMQ_USER:-admin}
+      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASS:-supersecretpassword}
+    ports:
+      # AMQP protocol port (This is what your Python scripts connect to)
+      - "5672:5672"
+      # HTTP Management UI (This is what you open in your browser)
+      - "15672:15672"
+    volumes:
+      # This ensures if the container crashes, your queues and messages survive
+      - rabbitmq_data:/var/lib/rabbitmq
+
+volumes:
+  rabbitmq_data:

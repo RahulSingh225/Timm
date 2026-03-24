@@ -1,32 +1,46 @@
 import pika
 import json
-import requests
+import os
 import pyttsx3
 import logging
+import google.generativeai as genai
+from dotenv import load_dotenv
 
 # Setup Logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - [HEAD ANALYST] - %(message)s')
 
 # Configuration
-RABBITMQ_HOST = 'localhost'
-EXCHANGE_NAME = 'market_data_exchange'
-QUEUE_NAME = 'master_alerts_queue'
-OLLAMA_URL = 'http://localhost:11434/api/generate'
-OLLAMA_MODEL = 'llama3'  # Change to 'mistral' or whatever you pulled in Ollama
+load_dotenv()
+RABBITMQ_HOST = os.getenv("RABBITMQ_HOST")
+RABBITMQ_USER = os.getenv("RABBITMQ_USER")
+RABBITMQ_PASS = os.getenv("RABBITMQ_PASS")
+EXCHANGE_NAME = os.getenv("RABBITMQ_EXCHANGE")
+QUEUE_NAME = os.getenv("RABBITMQ_SWING_QUEUE")
+
+# Load Environment Variables and Configure Gemini
+
+GOOGLE_API_KEY = os.getenv("GEMINI_API_KEY")
+
+if not GOOGLE_API_KEY:
+    logging.error("GEMINI_API_KEY missing from .env file!")
+    exit(1)
+
+genai.configure(api_key=GOOGLE_API_KEY)
+
+# Use the fast, cost-effective Flash model for rapid analysis
+# You can upgrade to 'gemini-1.5-pro' if you need deep, complex reasoning later
+model = genai.GenerativeModel('gemini-1.5-flash')
 
 # Initialize Offline Text-to-Speech Engine
 try:
     tts_engine = pyttsx3.init()
-    # Optional: Adjust speaking rate and voice
     tts_engine.setProperty('rate', 170) 
-    voices = tts_engine.getProperty('voices')
-    # tts_engine.setProperty('voice', voices[1].id) # Uncomment to try a female/different voice
 except Exception as e:
     logging.warning(f"TTS Engine failed to initialize: {e}. Voice output will be disabled.")
     tts_engine = None
 
 def speak_text(text):
-    """Speaks the generated summary aloud if the TTS engine is running."""
+    """Speaks the generated summary aloud."""
     if tts_engine:
         logging.info("🎙️ Broadcasting audio...")
         tts_engine.say(text)
@@ -34,12 +48,11 @@ def speak_text(text):
 
 def generate_market_brief(alert_data):
     """
-    Sends the structured JSON alert to the local Ollama LLM 
-    with a strict system prompt to generate a trading brief.
+    Sends the structured JSON alert to the Gemini API
+    to generate a fast, punchy trading brief.
     """
     symbol = alert_data.get('symbol', 'UNKNOWN')
     
-    # The System Prompt is the secret sauce. Make it strict so the LLM doesn't hallucinate.
     system_prompt = f"""
     You are a ruthless, highly experienced quantitative trading desk analyst. 
     You have just received a technical alert for the stock: {symbol}.
@@ -54,49 +67,43 @@ def generate_market_brief(alert_data):
     Make it sound like a fast-paced prop desk update.
     """
 
-    payload = {
-        "model": OLLAMA_MODEL,
-        "prompt": system_prompt,
-        "stream": False # Set to false so we get the full response at once for TTS
-    }
-
     try:
-        logging.info(f"🧠 Asking {OLLAMA_MODEL} to analyze setup for {symbol}...")
-        response = requests.post(OLLAMA_URL, json=payload)
-        response.raise_for_status()
+        logging.info(f"🧠 Asking Gemini to analyze setup for {symbol}...")
         
-        result = response.json()
-        return result.get("response", "Error: No response generated.")
+        # Call the Gemini API
+        response = model.generate_content(system_prompt)
+        
+        return response.text.strip()
+        
     except Exception as e:
-        logging.error(f"Failed to communicate with Ollama: {e}")
-        return "System error: Unable to contact the LLM analysis server."
+        logging.error(f"Failed to communicate with Gemini API: {e}")
+        return "System error: Unable to contact the Gemini analysis server."
 
 def process_alert(ch, method, properties, body):
     """
-    Triggered when a Level 1 Agent (like the Swing Agent) publishes an alert.
+    Triggered when a Level 1 Agent publishes an alert.
     """
     try:
-        # 1. Parse the incoming JSON alert
         alert_data = json.loads(body)
         symbol = alert_data.get('symbol')
         agent_source = alert_data.get('agent', 'Unknown')
         
         logging.info(f"🚨 ALERT RECEIVED from {agent_source} Agent for {symbol}")
 
-        # 2. Feed it to the LLM
+        # Feed it to Gemini
         brief = generate_market_brief(alert_data)
         
-        # 3. Print the output to the console
+        # Print output
         print("\n" + "="*50)
         print(f"📊 TRADING DESK BRIEF: {symbol}")
         print("="*50)
         print(f"{brief}")
         print("="*50 + "\n")
 
-        # 4. Speak the output
+        # Speak output
         speak_text(brief)
 
-        # 5. Acknowledge the message so RabbitMQ removes it from the queue
+        # Acknowledge message
         ch.basic_ack(delivery_tag=method.delivery_tag)
 
     except Exception as e:
@@ -110,20 +117,12 @@ def start_head_analyst():
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
 
-    # Ensure the exchange exists
     channel.exchange_declare(exchange=EXCHANGE_NAME, exchange_type='topic', durable=True)
-
-    # Declare the master alerts queue
     channel.queue_declare(queue=QUEUE_NAME, durable=True)
-
-    # Bind the queue to listen to ALL alerts (using the 'alert.#' wildcard)
-    # This catches 'alert.swing.RELIANCE', 'alert.scalper.HDFCBANK', etc.
     channel.queue_bind(exchange=EXCHANGE_NAME, queue=QUEUE_NAME, routing_key='alert.#')
-
-    # Setup the consumer
     channel.basic_consume(queue=QUEUE_NAME, on_message_callback=process_alert)
 
-    logging.info("🧠 Head Analyst LLM is online, connected to Ollama, and listening for alerts...")
+    logging.info("🧠 Head Analyst (Powered by Gemini) is online and listening for alerts...")
     try:
         channel.start_consuming()
     except KeyboardInterrupt:

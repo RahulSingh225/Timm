@@ -1,2 +1,9 @@
 kiteconnect
 python-dotenv
+pandas
+pandas-ta
+pika
+pyttsx3
+requests
+yfinance
+google-generativeai

@@ -29,7 +29,7 @@ genai.configure(api_key=GOOGLE_API_KEY)
 
 # Use the fast, cost-effective Flash model for rapid analysis
 # You can upgrade to 'gemini-1.5-pro' if you need deep, complex reasoning later
-model = genai.GenerativeModel('gemini-1.5-flash')
+model = genai.GenerativeModel('gemini-2.5-flash')
 
 # Initialize Offline Text-to-Speech Engine
 try:
@@ -112,7 +112,7 @@ def process_alert(ch, method, properties, body):
 
 def start_head_analyst():
     """Connects to RabbitMQ and listens for all alerts."""
-    credentials = pika.PlainCredentials('admin', 'supersecretpassword')
+    credentials = pika.PlainCredentials(RABBITMQ_USER, RABBITMQ_PASS)
     parameters = pika.ConnectionParameters(RABBITMQ_HOST, 5672, '/', credentials)
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()

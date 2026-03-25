@@ -17,5 +17,19 @@ services:
       # This ensures if the container crashes, your queues and messages survive
       - rabbitmq_data:/var/lib/rabbitmq
 
+  postgres:
+    image: postgres:15-alpine
+    container_name: ai_prop_desk_db
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-adminpassword}
+      POSTGRES_DB: ${POSTGRES_DB:-propdesk}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
 volumes:
   rabbitmq_data:
+  postgres_data:

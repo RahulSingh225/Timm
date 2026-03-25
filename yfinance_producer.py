@@ -84,7 +84,7 @@ if __name__ == "__main__":
     
     if connection and channel:
         # Let's test it with a mini-watchlist of heavyweights
-        watchlist = ["RELIANCE", "HDFCBANK", "TCS", "INFY", "ICICIBANK"]
+        watchlist = ["RELIANCE", "HDFCBANK", "TCS", "INFY", "ICICIBANK","NIFTY"]
         
         logging.info("Starting EOD Data Ingestion Pipeline...")
         for stock in watchlist:

@@ -1,3 +1,7 @@
+import os
+from datetime import datetime
+from dotenv import load_dotenv
+load_dotenv()
 import pika
 import json
 import psycopg2
@@ -8,12 +12,12 @@ from psycopg2.extras import execute_values
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - [VAULT WORKER] - %(message)s')
 
 # Configuration
-RABBITMQ_HOST = 'localhost'
-EXCHANGE_NAME = 'market_data_exchange'
-QUEUE_NAME = 'database_vault_queue'
+RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "localhost")
+EXCHANGE_NAME = os.getenv("RABBITMQ_EXCHANGE", "market_data_exchange")
+QUEUE_NAME = os.getenv("RABBITMQ_QUEUE", "vault_db_queue")
 
 # Database Connection String (Matches Docker Compose)
-DB_URL = "postgresql://admin:supersecretpassword@localhost:5432/propdesk"
+DB_URL = os.getenv("DATABASE_URL")
 
 def get_db_connection():
     try:
@@ -40,25 +44,31 @@ def process_message(ch, method, properties, body):
         # 1. HANDLE ALERTS (alert.#)
         # ---------------------------------------------------------
         if routing_key.startswith('alert.'):
-            # Parse signal type from the text to categorize it for the RAG LLM
-            signals_text = str(payload.get('signals', ''))
-            signal_type = 'NEUTRAL'
-            if 'BULLISH' in signals_text or 'GOLDEN' in signals_text or 'BOUNCE' in signals_text:
-                signal_type = 'BULLISH'
-            elif 'BEARISH' in signals_text or 'DEATH' in signals_text or 'DROP' in signals_text:
-                signal_type = 'BEARISH'
+            # Smart signal type detection (mirrors db_worker.ts logic)
+            signals_list = payload.get('signals', [])
+            signals_text = " ".join(signals_list) if isinstance(signals_list, list) else str(signals_list)
+
+            calc_type = 'NEUTRAL'
+            if any(kw in signals_text.upper() for kw in ['BULLISH', 'GOLDEN', 'BOUNCE', 'BUY']):
+                calc_type = 'BULLISH'
+            elif any(kw in signals_text.upper() for kw in ['BEARISH', 'DEATH', 'DROP', 'SELL']):
+                calc_type = 'BEARISH'
+
+            # Honor explicit type from agent payload if provided, else use calculated
+            signal_type = payload.get('signal_type') or payload.get('signalType') or calc_type
 
             cursor.execute("""
-                INSERT INTO market_alerts (symbol, agent_source, signal_type, close_price, signals)
-                VALUES (%s, %s, %s, %s, %s)
+                INSERT INTO market_alerts (symbol, agent_source, signal_type, close_price, signals, summary)
+                VALUES (%s, %s, %s, %s, %s, %s)
             """, (
                 payload.get('symbol'),
                 payload.get('agent', 'Unknown'),
                 signal_type,
-                payload.get('close_price'),
-                json.dumps(payload.get('signals', [])) # Store as JSONB
+                round(float(payload.get('close_price'))) if payload.get('close_price') else None,
+                json.dumps(signals_list),
+                payload.get('summary') or payload.get('brief')
             ))
-            logging.info(f"💾 Saved Alert for {payload.get('symbol')}")
+            logging.info(f"💾 Saved Alert for {payload.get('symbol')} [{signal_type}]")
 
         # ---------------------------------------------------------
         # 2. HANDLE SMART MONEY (market.sentiment.participant)
@@ -135,8 +145,8 @@ def process_message(ch, method, properties, body):
                         sentiment_score = EXCLUDED.sentiment_score;
                 """, (
                     trade_date,
-                    payload.get('fii_net', 0),
-                    payload.get('dii_net', 0),
+                    payload.get('fii_net_cash', 0),
+                    payload.get('dii_net_cash', 0),
                     payload.get('fii_idx_fut_net', 0),
                     payload.get('pcr', 1.0),
                     payload.get('sentiment_score', 50)
@@ -211,7 +221,7 @@ def process_message(ch, method, properties, body):
         ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
 
 def start_vault_worker():
-    credentials = pika.PlainCredentials('admin', 'supersecretpassword')
+    credentials = pika.PlainCredentials(os.getenv('RABBITMQ_USER', 'admin'), os.getenv('RABBITMQ_PASS', 'supersecretpassword'))
     parameters = pika.ConnectionParameters(RABBITMQ_HOST, 5672, '/', credentials)
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
@@ -226,6 +236,9 @@ def start_vault_worker():
     channel.queue_bind(exchange=EXCHANGE_NAME, queue=QUEUE_NAME, routing_key='market.sentiment.participant')
     channel.queue_bind(exchange=EXCHANGE_NAME, queue=QUEUE_NAME, routing_key='market.news.macro')
     channel.queue_bind(exchange=EXCHANGE_NAME, queue=QUEUE_NAME, routing_key='market.footprint.options')
+    channel.queue_bind(exchange=EXCHANGE_NAME, queue=QUEUE_NAME, routing_key='market.sentiment.flows')
+    channel.queue_bind(exchange=EXCHANGE_NAME, queue=QUEUE_NAME, routing_key='market.sentiment.sectors')
+    channel.queue_bind(exchange=EXCHANGE_NAME, queue=QUEUE_NAME, routing_key='market.sentiment.tradewise')
 
     # Prefetch count = 50 for faster bulk writing
     channel.basic_qos(prefetch_count=50)

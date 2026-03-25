@@ -11,8 +11,9 @@ export async function GET(req: NextRequest) {
     const stream = new ReadableStream({
         async start(controller) {
             try {
-                // Connect to your local RabbitMQ Docker container
-                connection = await amqp.connect('amqp://admin:yourpassword@13.235.69.226:5672');
+                // Connect to your RabbitMQ container via env vars
+                const RABBITMQ_URL = process.env.RABBITMQ_URL as string;
+                connection = await amqp.connect(RABBITMQ_URL);
                 channel = await connection.createChannel();
 
                 const exchange = 'market_data_exchange';

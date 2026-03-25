@@ -1,3 +1,6 @@
+import os
+from dotenv import load_dotenv
+load_dotenv()
 import requests
 import pandas as pd
 import pika
@@ -8,7 +11,7 @@ from datetime import datetime
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - [NSE FLOWS] - %(message)s')
 
-RABBITMQ_HOST = 'localhost'
+RABBITMQ_HOST = os.getenv('RABBITMQ_HOST', 'localhost')
 EXCHANGE_NAME = 'market_data_exchange'
 
 def get_nse_session():
@@ -80,7 +83,7 @@ def fetch_flows():
         payload['sentiment_score'] = 50
 
     # 3. Publish to RabbitMQ
-    connection = pika.BlockingConnection(pika.ConnectionParameters(RABBITMQ_HOST))
+    connection = pika.BlockingConnection(pika.ConnectionParameters(RABBITMQ_HOST, 5672, '/', pika.PlainCredentials(os.getenv('RABBITMQ_USER', 'admin'), os.getenv('RABBITMQ_PASS', 'supersecretpassword'))))
     channel = connection.channel()
     channel.exchange_declare(exchange=EXCHANGE_NAME, exchange_type='topic', durable=True)
     

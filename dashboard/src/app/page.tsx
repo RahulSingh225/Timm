@@ -25,6 +25,7 @@ export default function CommandCenter() {
   const [alerts, setAlerts] = useState<TradeAlert[]>([]);
   const [isConnected, setIsConnected] = useState(false);
   const [isProcessing, setIsProcessing] = useState<string | null>(null);
+  const [workers, setWorkers] = useState<Record<string, { name: string, status: string, pid: number | null }>>({});
 
   // Mock initial pipeline state - in a real app, fetch this from a Next.js API route reading Postgres MAX(created_at)
   const [pipelines, setPipelines] = useState<PipelineStatus[]>([
@@ -33,6 +34,16 @@ export default function CommandCenter() {
     { name: 'Options Footprint', lastSync: 'Pending', status: 'error', records: 0 },
     { name: 'Macro News', lastSync: '2 mins ago', status: 'healthy', records: 843 },
   ]);
+
+  const fetchWorkers = async () => {
+    try {
+      const res = await fetch('/api/system/workers');
+      const data = await res.json();
+      if (!data.error) setWorkers(data);
+    } catch (err) {
+      console.error('Failed to fetch workers', err);
+    }
+  };
 
   useEffect(() => {
     const eventSource = new EventSource('/api/alerts');
@@ -46,20 +57,65 @@ export default function CommandCenter() {
       setIsConnected(false);
       eventSource.close();
     };
-    return () => eventSource.close();
+
+    // Initial fetch and poll workers
+    fetchWorkers();
+    const interval = setInterval(fetchWorkers, 5000);
+
+    return () => {
+      eventSource.close();
+      clearInterval(interval);
+    };
   }, []);
+
+  const toggleWorker = async (workerId: string, currentStatus: string) => {
+    const action = currentStatus === 'RUNNING' ? 'stop' : 'start';
+    setIsProcessing(workerId);
+    try {
+      const res = await fetch('/api/system/workers', {
+        method: 'POST',
+        body: JSON.stringify({ worker_id: workerId, action })
+      });
+      await res.json();
+      await fetchWorkers();
+    } catch (err) {
+      alert('Failed to toggle worker');
+    } finally {
+      setIsProcessing(null);
+    }
+  };
 
   const triggerAction = async (actionId: string) => {
     setIsProcessing(actionId);
-    // TODO: Wire this to a Next.js API route that publishes a trigger message to RabbitMQ
-    // e.g., await fetch(`/api/system/trigger`, { method: 'POST', body: JSON.stringify({ task: actionId }) })
-    setTimeout(() => {
-      setIsProcessing(null);
-      // Simulate pipeline update
-      if (actionId === 'sync_fii') {
-        setPipelines(p => p.map(pipe => pipe.name === 'FII/DII Flows' ? { ...pipe, lastSync: 'Just now', records: pipe.records + 1 } : pipe));
+
+    try {
+      const response = await fetch('/api/system/trigger', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ task: actionId }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to trigger task');
       }
-    }, 2000);
+
+      // Briefly wait to simulate running pipeline then unlock processing state
+      setTimeout(() => {
+        setIsProcessing(null);
+        if (actionId === 'sync_fii') {
+          setPipelines(p => p.map(pipe => pipe.name === 'FII/DII Flows' ? { ...pipe, lastSync: 'Just now', records: pipe.records + 1 } : pipe));
+        } else if (actionId === 'sync_nsdl') {
+          setPipelines(p => p.map(pipe => pipe.name === 'NSDL Sectors' ? { ...pipe, lastSync: 'Just now', records: pipe.records + 1 } : pipe));
+        }
+      }, 500);
+
+    } catch (err) {
+      console.error(err);
+      setIsProcessing(null);
+      alert('Failed to execute command: Broker might be offline or task invalid.');
+    }
   };
 
   return (
@@ -204,23 +260,30 @@ export default function CommandCenter() {
           </div>
 
           <div className="bg-neutral-900 border border-neutral-800 rounded-lg p-4">
-            <h2 className="text-sm text-neutral-400 uppercase tracking-wider mb-4 border-b border-neutral-800 pb-2">
-              Active Math Agents
+            <h2 className="text-sm text-neutral-400 uppercase tracking-wider mb-4 border-b border-neutral-800 pb-2 flex items-center gap-2">
+              <Zap size={16} /> Python Fleet Status
             </h2>
-            <ul className="space-y-3 text-sm">
-              <li className="flex justify-between items-center">
-                <span className="text-neutral-300">Swing Tech (EMA/RSI)</span>
-                <span className="text-emerald-400">Running</span>
-              </li>
-              <li className="flex justify-between items-center">
-                <span className="text-neutral-300">Options Greek Engine</span>
-                <span className="text-emerald-400">Running</span>
-              </li>
-              <li className="flex justify-between items-center">
-                <span className="text-neutral-300">Sentiment Scorer</span>
-                <span className="text-emerald-400">Running</span>
-              </li>
-            </ul>
+            <div className="space-y-3">
+              {Object.entries(workers).map(([id, info]) => (
+                <div key={id} className="flex justify-between items-center text-sm p-2 hover:bg-neutral-800/50 rounded transition-colors group">
+                  <div className="flex flex-col">
+                    <span className="text-neutral-300 font-medium capitalize">{id}</span>
+                    <span className="text-[10px] text-neutral-500 font-mono">{info.name}</span>
+                  </div>
+                  <button
+                    onClick={() => toggleWorker(id, info.status)}
+                    disabled={isProcessing === id}
+                    className={`px-2 py-1 rounded text-[10px] font-bold transition-all ${info.status === 'RUNNING'
+                        ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-red-500/20 hover:text-red-400 hover:border-red-500/30'
+                        : 'bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-emerald-500/20 hover:text-emerald-400 hover:border-emerald-500/30'
+                      }`}
+                  >
+                    {isProcessing === id ? '...' : (info.status === 'RUNNING' ? 'STOP' : 'START')}
+                  </button>
+                </div>
+              ))}
+              {Object.keys(workers).length === 0 && <p className="text-xs text-neutral-600 text-center py-4">No workers detected.</p>}
+            </div>
           </div>
         </div>
 

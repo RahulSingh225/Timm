@@ -84,3 +84,14 @@ export const sectorFlows = pgTable("sector_flows", {
     sectorName: varchar("sector_name", { length: 100 }).notNull(),
     netInvestmentCr: integer("net_investment_cr").notNull(),
 });
+
+export const tradewiseFlows = pgTable("tradewise_flows", {
+    id: serial("id").primaryKey(),
+    tradeDate: timestamp("trade_date").notNull(),
+    isin: varchar("isin", { length: 20 }).notNull(),
+    buyValue: real("buy_value"),
+    sellValue: real("sell_value"),
+    netValue: real("net_value"),
+    instrumentType: varchar("instrument_type", { length: 10 }), // 'EQ', etc.
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+});

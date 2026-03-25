@@ -7,3 +7,8 @@ pyttsx3
 requests
 yfinance
 google-generativeai
+lxml
+beautifulsoup4
+py-vollib
+psycopg2-binary
+feedparser

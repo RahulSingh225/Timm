@@ -1,3 +1,7 @@
+import os
+import io
+from dotenv import load_dotenv
+load_dotenv()
 import pandas as pd
 import requests
 import pika
@@ -7,7 +11,7 @@ from datetime import datetime
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - [NSDL SECTORS] - %(message)s')
 
-RABBITMQ_HOST = 'localhost'
+RABBITMQ_HOST = os.getenv('RABBITMQ_HOST', 'localhost')
 EXCHANGE_NAME = 'market_data_exchange'
 
 def fetch_fortnightly_sectors(date_code=None):
@@ -47,7 +51,7 @@ def fetch_fortnightly_sectors(date_code=None):
                 })
 
         if payloads:
-            connection = pika.BlockingConnection(pika.ConnectionParameters(RABBITMQ_HOST))
+            connection = pika.BlockingConnection(pika.ConnectionParameters(RABBITMQ_HOST, 5672, '/', pika.PlainCredentials(os.getenv('RABBITMQ_USER', 'admin'), os.getenv('RABBITMQ_PASS', 'supersecretpassword'))))
             channel = connection.channel()
             channel.basic_publish(
                 exchange=EXCHANGE_NAME,

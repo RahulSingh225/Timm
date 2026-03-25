@@ -1,14 +1,21 @@
 import requests
 import pandas as pd
+import pika
 import zipfile
 import io
 import json
 import logging
 import os
+from dotenv import load_dotenv
+load_dotenv()
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - [TRADEWISE] - %(message)s')
+
+RABBITMQ_HOST = os.getenv('RABBITMQ_HOST', 'localhost')
+EXCHANGE_NAME = os.getenv('RABBITMQ_EXCHANGE', 'market_data_exchange')
+ROUTING_KEY = 'market.sentiment.tradewise'
 
 def get_isin_map():
     try:
@@ -68,7 +75,27 @@ def process_tradewise_month(months_back=1):
                     sector_agg[sector]['net'] = sector_agg[sector]['buy'] - sector_agg[sector]['sell']
 
                 logging.info(f"Aggregated {len(sector_agg)} sectors for {mon_name} {year}")
-                # You can now save this to DB or publish to RabbitMQ here
+                
+                # Publish to RabbitMQ
+                if sector_agg:
+                    payload = {
+                        "date": target_date.strftime("%d-%b-%Y"),
+                        "data": [{"isin": "SECTOR", "instrument": "EQ", "buy": v['buy'], "sell": v['sell'], "net": v['net'], "sector": k} for k, v in sector_agg.items()]
+                    }
+                    
+                    credentials = pika.PlainCredentials(os.getenv('RABBITMQ_USER', 'admin'), os.getenv('RABBITMQ_PASS', 'supersecretpassword'))
+                    connection = pika.BlockingConnection(pika.ConnectionParameters(RABBITMQ_HOST, 5672, '/', credentials))
+                    channel = connection.channel()
+                    
+                    channel.exchange_declare(exchange=EXCHANGE_NAME, exchange_type='topic', durable=True)
+                    channel.basic_publish(
+                        exchange=EXCHANGE_NAME,
+                        routing_key=ROUTING_KEY,
+                        body=json.dumps(payload),
+                        properties=pika.BasicProperties(delivery_mode=2)
+                    )
+                    logging.info(f"✅ Published Aggregated Tradewise data for {mon_name} {year}")
+                    connection.close()
                 
     except Exception as e:
         logging.error(f"Failed to process trade-wise data: {e}")

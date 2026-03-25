@@ -1,12 +1,12 @@
 import amqp from 'amqplib';
 import { db } from './src/db/index';
-import { alerts } from './src/db/schema';
+import { marketAlerts } from './src/db/schema';
 import * as dotenv from 'dotenv';
 
 // Load environment variables for the worker
 dotenv.config({ path: '.env.local' });
 
-const RABBITMQ_URL = process.env.RABBITMQ_URL || 'amqp://admin:supersecretpassword@localhost:5672';
+const RABBITMQ_URL = process.env.RABBITMQ_URL as string;
 const EXCHANGE_NAME = 'market_data_exchange';
 
 async function startDatabaseWorker() {
@@ -31,12 +31,13 @@ async function startDatabaseWorker() {
                     console.log(`[DB WORKER] Received alert for ${alertData.symbol} from ${alertData.agent}`);
 
                     // Insert into Drizzle ORM
-                    await db.insert(alerts).values({
-                        agent: alertData.agent || 'Unknown',
+                    await db.insert(marketAlerts).values({
+                        agentSource: alertData.agent || 'Unknown',
                         symbol: alertData.symbol,
-                        closePrice: alertData.close_price ? alertData.close_price.toString() : null,
+                        signalType: alertData.signal_type || alertData.signalType || 'NEUTRAL',
+                        closePrice: alertData.close_price ? Math.round(Number(alertData.close_price)) : null,
                         signals: alertData.signals || [],
-                        brief: alertData.brief || null, // Might be empty until Gemini updates it, 
+                        summary: alertData.brief || null, // Might be empty until Gemini updates it, 
                         // or Head Analyst can be updated to send its brief here
                     });
 

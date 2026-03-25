@@ -1,3 +1,6 @@
+import os
+from dotenv import load_dotenv
+load_dotenv()
 import feedparser
 import pika
 import json
@@ -7,7 +10,7 @@ from time import mktime
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - [NEWS AGENT] - %(message)s')
 
-RABBITMQ_HOST = 'localhost'
+RABBITMQ_HOST = os.getenv('RABBITMQ_HOST', 'localhost')
 EXCHANGE_NAME = 'market_data_exchange'
 
 # Top Indian Financial Feeds
@@ -18,7 +21,7 @@ RSS_FEEDS = {
 }
 
 def fetch_and_publish_news():
-    credentials = pika.PlainCredentials('admin', 'supersecretpassword')
+    credentials = pika.PlainCredentials(os.getenv('RABBITMQ_USER', 'admin'), os.getenv('RABBITMQ_PASS', 'supersecretpassword'))
     connection = pika.BlockingConnection(pika.ConnectionParameters(RABBITMQ_HOST, 5672, '/', credentials))
     channel = connection.channel()
     channel.exchange_declare(exchange=EXCHANGE_NAME, exchange_type='topic', durable=True)

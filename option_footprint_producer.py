@@ -1,3 +1,6 @@
+import os
+from dotenv import load_dotenv
+load_dotenv()
 import requests
 import pandas as pd
 import pika
@@ -5,7 +8,8 @@ import json
 import logging
 import zipfile
 import io
-from datetime import datetime
+import io
+from datetime import datetime, timedelta
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - [FOOTPRINT AGENT] - %(message)s')
 
@@ -40,10 +44,19 @@ def get_nse_bhavcopy(date_obj):
         return None
 
 def process_and_publish_footprint():
-    today = datetime.now()
-    df = get_nse_bhavcopy(today)
+    # Try the last 5 days to find the latest published bhavcopy
+    df = None
+    target_date = datetime.now()
+    
+    for i in range(5):
+        current_attempt = target_date - timedelta(days=i)
+        df = get_nse_bhavcopy(current_attempt)
+        if df is not None and not df.empty:
+            logging.info(f"Using Bhavcopy from {current_attempt.strftime('%d-%b-%Y')}")
+            break
     
     if df is None or df.empty:
+        logging.error("Could not find any recent Bhavcopy files.")
         return
 
     # Filter for NIFTY Options only
@@ -54,7 +67,7 @@ def process_and_publish_footprint():
     for _, row in nifty_opts.iterrows():
         # Determine if weekly or monthly based on EXPIRY_DT vs current date (simplified logic)
         payload = {
-            "tradeDate": today.strftime("%Y-%m-%d"),
+            "tradeDate": current_attempt.strftime("%Y-%m-%d"),
             "indexName": "NIFTY",
             "expiryDate": row['EXPIRY_DT'],
             "strikePrice": float(row['STRIKE_PR']),
@@ -67,8 +80,8 @@ def process_and_publish_footprint():
         payloads.append(payload)
 
     # Publish to RabbitMQ
-    credentials = pika.PlainCredentials('admin', 'supersecretpassword')
-    connection = pika.BlockingConnection(pika.ConnectionParameters('localhost', 5672, '/', credentials))
+    credentials = pika.PlainCredentials(os.getenv('RABBITMQ_USER', 'admin'), os.getenv('RABBITMQ_PASS', 'supersecretpassword'))
+    connection = pika.BlockingConnection(pika.ConnectionParameters(os.getenv('RABBITMQ_HOST', 'localhost'), 5672, '/', credentials))
     channel = connection.channel()
     channel.exchange_declare(exchange='market_data_exchange', exchange_type='topic', durable=True)
 

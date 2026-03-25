@@ -1,3 +1,6 @@
+import os
+from dotenv import load_dotenv
+load_dotenv()
 import requests
 import pandas as pd
 import pika
@@ -10,7 +13,7 @@ import io
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - [FII/DII SCRAPER] - %(message)s')
 
 # Configuration
-RABBITMQ_HOST = 'localhost'
+RABBITMQ_HOST = os.getenv('RABBITMQ_HOST', 'localhost')
 EXCHANGE_NAME = 'market_data_exchange'
 ROUTING_KEY = 'market.sentiment.participant'
 
@@ -114,7 +117,7 @@ def publish_to_rabbitmq(data):
         return
         
     try:
-        credentials = pika.PlainCredentials('admin', 'supersecretpassword')
+        credentials = pika.PlainCredentials(os.getenv('RABBITMQ_USER', 'admin'), os.getenv('RABBITMQ_PASS', 'supersecretpassword'))
         parameters = pika.ConnectionParameters(RABBITMQ_HOST, 5672, '/', credentials)
         connection = pika.BlockingConnection(parameters)
         channel = connection.channel()

@@ -17,7 +17,8 @@ workers_registry = {
     "manager": "system_manager.py",
     "options": "options_agent_worker.py",
     "swing": "swing_agent_worker.py",
-    "head": "head_analyst_worker.py"
+    "head": "head_analyst_worker.py",
+    "vector": "vector_agent_worker.py"
 }
 
 active_processes = {} # {id: subprocess.Popen}

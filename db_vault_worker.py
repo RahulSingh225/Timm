@@ -127,6 +127,39 @@ def process_message(ch, method, properties, body):
                 
                 execute_values(cursor, insert_query, values)
                 logging.info(f"💾 Saved {len(values)} Options Footprint rows.")
+                
+        # ---------------------------------------------------------
+        # 4.5 HANDLE VECTOR SIGNALS (candle.vector)
+        # ---------------------------------------------------------
+        elif routing_key == 'candle.vector':
+            timestamp_val = payload.get('timestamp')
+            if timestamp_val and not timestamp_val.endswith('Z'):
+                # Handle YYYY-MM-DD or other formats to valid PG timestamp
+                if len(timestamp_val) == 10:
+                    timestamp_val = f"{timestamp_val} 15:30:00"
+
+            cursor.execute("""
+                INSERT INTO vector_signals 
+                (symbol, timestamp, raw_scalar, iv_adjusted_scalar, 
+                 current_atm_iv, signed_accumulation, predicted_next_move, 
+                 linear_m, linear_b, confidence, signal, candle_vector)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (
+                payload.get('symbol'),
+                timestamp_val,
+                payload.get('raw_scalar'),
+                payload.get('iv_adjusted_scalar'),
+                payload.get('current_atm_iv'),
+                payload.get('signed_accumulation'),
+                payload.get('predicted_next_move'),
+                payload.get('linear_m'),
+                payload.get('linear_b'),
+                payload.get('confidence'),
+                payload.get('signal'),
+                json.dumps(payload.get('candle_vector'))
+            ))
+            logging.info(f"💾 Saved Vector Signal: {payload.get('signal')} for {payload.get('symbol')}")
+
         # ---------------------------------------------------------
         # 5. HANDLE FII/DII FLOWS (from Node.js producer)
         # ---------------------------------------------------------
@@ -239,6 +272,7 @@ def start_vault_worker():
     channel.queue_bind(exchange=EXCHANGE_NAME, queue=QUEUE_NAME, routing_key='market.sentiment.flows')
     channel.queue_bind(exchange=EXCHANGE_NAME, queue=QUEUE_NAME, routing_key='market.sentiment.sectors')
     channel.queue_bind(exchange=EXCHANGE_NAME, queue=QUEUE_NAME, routing_key='market.sentiment.tradewise')
+    channel.queue_bind(exchange=EXCHANGE_NAME, queue=QUEUE_NAME, routing_key='candle.vector')
 
     # Prefetch count = 50 for faster bulk writing
     channel.basic_qos(prefetch_count=50)

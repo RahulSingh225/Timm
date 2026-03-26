@@ -55,7 +55,7 @@ def fetch_and_publish_eod_data(channel, symbol):
         # Convert datetime to string format
         df['Date'] = df['Date'].dt.strftime('%Y-%m-%d') 
         
-        # Convert DataFrame to a dictionary payload
+        # Convert DataFrame to a dictionary payload complete with dates
         payload = {
             "symbol": symbol,
             "timestamp": datetime.now().isoformat(),
@@ -63,6 +63,28 @@ def fetch_and_publish_eod_data(channel, symbol):
             # Orient='records' creates a clean list of dictionaries for each day
             "data": df[['Date', 'Open', 'High', 'Low', 'Close', 'Volume']].to_dict(orient='records')
         }
+        
+        # Publish individual candles to the vector agent
+        for row in payload["data"]:
+            candle_payload = {
+                "symbol": symbol,
+                "timestamp": row["Date"],
+                "open": row["Open"],
+                "high": row["High"],
+                "low": row["Low"],
+                "close": row["Close"],
+                "volume": row["Volume"]
+            }
+            channel.basic_publish(
+                exchange=EXCHANGE_NAME,
+                routing_key=f"market.candle.{symbol}",
+                body=json.dumps(candle_payload),
+                properties=pika.BasicProperties(
+                    delivery_mode=2,
+                    content_type='application/json'
+                )
+            )
+            
         
         # Publish the payload to RabbitMQ
         channel.basic_publish(
@@ -74,7 +96,7 @@ def fetch_and_publish_eod_data(channel, symbol):
                 content_type='application/json'
             )
         )
-        logging.info(f"Successfully published {len(df)} days of data to queue with key: {routing_key}")
+        logging.info(f"Successfully published {len(df)} days of data to queue with keys: {routing_key} & market.candle.{symbol}")
         
     except Exception as e:
         logging.error(f"Error fetching/publishing data for {symbol}: {e}")

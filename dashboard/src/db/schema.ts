@@ -95,3 +95,21 @@ export const tradewiseFlows = pgTable("tradewise_flows", {
     instrumentType: varchar("instrument_type", { length: 10 }), // 'EQ', etc.
     createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+// 8. VECTOR SIGNALS
+export const vectorSignals = pgTable("vector_signals", {
+    id: serial("id").primaryKey(),
+    symbol: varchar("symbol", { length: 50 }).notNull(),
+    timestamp: timestamp("timestamp"),
+    rawScalar: real("raw_scalar"),
+    ivAdjustedScalar: real("iv_adjusted_scalar"),
+    currentAtmIv: real("current_atm_iv"),
+    signedAccumulation: real("signed_accumulation"),
+    predictedNextMove: real("predicted_next_move"),
+    linearM: real("linear_m"),
+    linearB: real("linear_b"),
+    confidence: real("confidence"),
+    signal: varchar("signal", { length: 20 }),
+    candleVector: jsonb("candle_vector"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+});

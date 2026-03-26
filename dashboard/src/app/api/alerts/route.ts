@@ -5,8 +5,8 @@ import amqp from 'amqplib';
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
-    let connection: amqp.Connection | null = null;
-    let channel: amqp.Channel | null = null;
+    let connection: any = null;
+    let channel: any = null;
 
     const stream = new ReadableStream({
         async start(controller) {
@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
 
                 console.log('[SSE API] Connected to RabbitMQ. Streaming alerts to dashboard...');
 
-                channel.consume(q.queue, (msg) => {
+                channel.consume(q.queue, (msg: any) => {
                     if (msg) {
                         const payload = msg.content.toString();
                         // Format for Server-Sent Events: "data: {json}\n\n"

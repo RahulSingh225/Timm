@@ -18,7 +18,10 @@ workers_registry = {
     "options": "options_agent_worker.py",
     "swing": "swing_agent_worker.py",
     "head": "head_analyst_worker.py",
-    "vector": "vector_agent_worker.py"
+    "vector": "vector_agent_worker.py",
+    "screener": "screener_agent_worker.py",
+    "cues": "global_cues_producer.py",
+    "monitor": "price_monitor_worker.py"
 }
 
 active_processes = {} # {id: subprocess.Popen}
@@ -106,7 +109,7 @@ def trigger_task(task: str, background_tasks: BackgroundTasks):
     Trigger various system tasks.
     Valid tasks: sync_fii, sync_nsdl, seed_db
     """
-    valid_tasks = ["sync_fii", "sync_nsdl", "seed_db"]
+    valid_tasks = ["sync_fii", "sync_nsdl", "seed_db", "sync_yfinance"]
     if task not in valid_tasks:
         raise HTTPException(status_code=400, detail=f"Invalid task. Valid: {valid_tasks}")
 
@@ -141,6 +144,20 @@ def seed_database(background_tasks: BackgroundTasks):
         
     background_tasks.add_task(run_seed)
     return {"message": "Database seeding initiated in the background."}
+
+@app.post("/ingest")
+def run_ingestion(background_tasks: BackgroundTasks):
+    """
+    Trigger the yfinance data ingestion pipeline.
+    Fetches EOD data for all active watchlist symbols and publishes to RabbitMQ.
+    """
+    def run_yfinance():
+        logging.info("Running yfinance producer...")
+        subprocess.run([sys.executable, "yfinance_producer.py"], check=False)
+        logging.info("yfinance ingestion finished.")
+
+    background_tasks.add_task(run_yfinance)
+    return {"message": "Data ingestion initiated in the background."}
 
 if __name__ == "__main__":
     logging.info("Starting Web Server. Access the API at http://localhost:8000")

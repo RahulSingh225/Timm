@@ -239,6 +239,120 @@ def process_message(ch, method, properties, body):
                 
                 execute_values(cursor, insert_query, values)
                 logging.info(f"💾 Saved {len(values)} Trade-wise records.")
+
+        # ---------------------------------------------------------
+        # 8. HANDLE INTRADAY CANDLE CACHE (market.intraday.*)
+        # ---------------------------------------------------------
+        elif routing_key.startswith('market.intraday.'):
+            candles = payload.get('data', [])
+            timeframe = payload.get('timeframe', '15m')
+            symbol = payload.get('symbol')
+            if candles:
+                insert_query = """
+                    INSERT INTO intraday_candles 
+                    (symbol, timeframe, candle_time, open, high, low, close, volume)
+                    VALUES %s
+                    ON CONFLICT (symbol, timeframe, candle_time) DO UPDATE SET
+                        open = EXCLUDED.open,
+                        high = EXCLUDED.high,
+                        low = EXCLUDED.low,
+                        close = EXCLUDED.close,
+                        volume = EXCLUDED.volume,
+                        fetched_at = NOW();
+                """
+                values = [(
+                    symbol, timeframe, c['timestamp'],
+                    c['open'], c['high'], c['low'], c['close'], c['volume']
+                ) for c in candles]
+                execute_values(cursor, insert_query, values)
+                logging.info(f"💾 Cached {len(values)} {timeframe} candles for {symbol}")
+
+        # ---------------------------------------------------------
+        # 9. HANDLE SCREENER RESULTS (screener.intraday.*)
+        # ---------------------------------------------------------
+        elif routing_key.startswith('screener.'):
+            cursor.execute("""
+                INSERT INTO screened_stocks 
+                (symbol, timeframe, trade_type, setup_type, entry_price, target_price, 
+                 stoploss_price, target_pct, risk_pct, confidence, signals, status)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (
+                payload.get('symbol'),
+                payload.get('timeframe', '15m'),
+                payload.get('trade_type', 'INTRADAY'),
+                payload.get('setup_type', 'UNKNOWN'),
+                payload.get('entry_price'),
+                payload.get('target_price'),
+                payload.get('stoploss_price'),
+                payload.get('target_pct'),
+                payload.get('risk_pct'),
+                payload.get('confidence', 0),
+                json.dumps(payload.get('signals', [])),
+                'ACTIVE'
+            ))
+            logging.info(f"💾 Saved Screener Result: {payload.get('setup_type')} for {payload.get('symbol')}")
+
+        # ---------------------------------------------------------
+        # 10. HANDLE GLOBAL CUES (market.global.cues)
+        # ---------------------------------------------------------
+        elif routing_key == 'market.global.cues':
+            cursor.execute("""
+                INSERT INTO global_cues 
+                (spy_change_pct, qqq_change_pct, dji_change_pct, vix_value, vix_change_pct,
+                 sgx_nifty, sgx_change_pct, usd_inr, gift_nifty, overall_bias)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (
+                payload.get('spy_change_pct'),
+                payload.get('qqq_change_pct'),
+                payload.get('dji_change_pct'),
+                payload.get('vix_value'),
+                payload.get('vix_change_pct'),
+                payload.get('sgx_nifty'),
+                payload.get('sgx_change_pct'),
+                payload.get('usd_inr'),
+                payload.get('gift_nifty'),
+                payload.get('overall_bias', 'NEUTRAL')
+            ))
+            logging.info(f"💾 Saved Global Cues: Bias={payload.get('overall_bias')}")
+
+        # ---------------------------------------------------------
+        # 11. HANDLE ACTIVE TRADE UPDATES (trade.active.*)
+        # ---------------------------------------------------------
+        elif routing_key.startswith('trade.active.'):
+            action = payload.get('action', 'create')
+            if action == 'create':
+                cursor.execute("""
+                    INSERT INTO active_trades
+                    (symbol, trade_type, entry_price, stoploss, target, current_price, status, notes)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """, (
+                    payload.get('symbol'),
+                    payload.get('trade_type', 'INTRADAY_STOCK'),
+                    payload.get('entry_price'),
+                    payload.get('stoploss'),
+                    payload.get('target'),
+                    payload.get('current_price'),
+                    'OPEN',
+                    payload.get('notes')
+                ))
+                logging.info(f"💾 Created Active Trade: {payload.get('symbol')}")
+            elif action == 'update':
+                trade_id = payload.get('trade_id')
+                if trade_id:
+                    cursor.execute("""
+                        UPDATE active_trades SET 
+                            current_price = %s, pnl_pct = %s, status = %s,
+                            exit_time = CASE WHEN %s != 'OPEN' THEN NOW() ELSE exit_time END
+                        WHERE id = %s
+                    """, (
+                        payload.get('current_price'),
+                        payload.get('pnl_pct'),
+                        payload.get('status', 'OPEN'),
+                        payload.get('status', 'OPEN'),
+                        trade_id
+                    ))
+                    logging.info(f"💾 Updated Trade #{trade_id}: {payload.get('status')}")
+
         # Commit transaction and acknowledge message
         conn.commit()
         cursor.close()
@@ -273,6 +387,11 @@ def start_vault_worker():
     channel.queue_bind(exchange=EXCHANGE_NAME, queue=QUEUE_NAME, routing_key='market.sentiment.sectors')
     channel.queue_bind(exchange=EXCHANGE_NAME, queue=QUEUE_NAME, routing_key='market.sentiment.tradewise')
     channel.queue_bind(exchange=EXCHANGE_NAME, queue=QUEUE_NAME, routing_key='candle.vector')
+    # Co-Pilot expansion bindings
+    channel.queue_bind(exchange=EXCHANGE_NAME, queue=QUEUE_NAME, routing_key='market.intraday.#')
+    channel.queue_bind(exchange=EXCHANGE_NAME, queue=QUEUE_NAME, routing_key='screener.#')
+    channel.queue_bind(exchange=EXCHANGE_NAME, queue=QUEUE_NAME, routing_key='market.global.cues')
+    channel.queue_bind(exchange=EXCHANGE_NAME, queue=QUEUE_NAME, routing_key='trade.active.#')
 
     # Prefetch count = 50 for faster bulk writing
     channel.basic_qos(prefetch_count=50)

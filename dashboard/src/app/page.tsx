@@ -14,6 +14,13 @@ interface TradeAlert {
   timestamp?: string;
 }
 
+interface GlobalCues {
+  overallBias: string;
+  vixValue: number;
+  spyChangePct: number;
+  sgxNifty: number;
+}
+
 interface PipelineStatus {
   name: string;
   lastSync: string;
@@ -26,6 +33,7 @@ export default function CommandCenter() {
   const [isConnected, setIsConnected] = useState(false);
   const [isProcessing, setIsProcessing] = useState<string | null>(null);
   const [workers, setWorkers] = useState<Record<string, { name: string, status: string, pid: number | null }>>({});
+  const [globalCues, setGlobalCues] = useState<GlobalCues | null>(null);
 
   // Mock initial pipeline state - in a real app, fetch this from a Next.js API route reading Postgres MAX(created_at)
   const [pipelines, setPipelines] = useState<PipelineStatus[]>([
@@ -45,6 +53,16 @@ export default function CommandCenter() {
     }
   };
 
+  const fetchGlobalCues = async () => {
+    try {
+      const res = await fetch('/api/global');
+      const { data } = await res.json();
+      if (data) setGlobalCues(data);
+    } catch (err) {
+      console.error('Failed to fetch global cues', err);
+    }
+  };
+
   useEffect(() => {
     const eventSource = new EventSource('/api/alerts');
     eventSource.onopen = () => setIsConnected(true);
@@ -60,6 +78,7 @@ export default function CommandCenter() {
 
     // Initial fetch and poll workers
     fetchWorkers();
+    fetchGlobalCues();
     const interval = setInterval(fetchWorkers, 5000);
 
     return () => {
@@ -127,6 +146,19 @@ export default function CommandCenter() {
           <h1 className="text-2xl font-bold tracking-tight text-white">QUANT DESK <span className="text-neutral-500 text-sm">v2.0</span></h1>
         </div>
         <div className="flex items-center gap-4 text-sm">
+          {globalCues && (
+            <div className={`flex items-center gap-3 px-3 py-1.5 rounded border 
+              ${globalCues.overallBias === 'RISK_ON' ? 'bg-emerald-900/20 border-emerald-900/50 text-emerald-400' 
+              : globalCues.overallBias === 'RISK_OFF' ? 'bg-red-900/20 border-red-900/50 text-red-400' 
+              : 'bg-neutral-900 border-neutral-800 text-neutral-300'}`}>
+              <div className="font-bold border-r border-inherit pr-3">{globalCues.overallBias.replace('_', ' ')}</div>
+              <div className="flex items-center gap-3 text-xs opacity-90">
+                <span>VIX {globalCues.vixValue}</span>
+                <span>SPY {globalCues.spyChangePct > 0 ? '+' : ''}{globalCues.spyChangePct}%</span>
+                <span>GIFT {globalCues.sgxNifty}</span>
+              </div>
+            </div>
+          )}
           <div className="flex items-center gap-2 bg-neutral-900 px-3 py-1.5 rounded border border-neutral-800">
             <Server size={14} className="text-neutral-400" />
             <span className="text-neutral-300">Vault: PostgreSQL</span>

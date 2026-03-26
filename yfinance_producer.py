@@ -1,5 +1,6 @@
 import yfinance as yf
 import pika
+import psycopg2
 import json
 import logging
 from datetime import datetime
@@ -16,6 +17,34 @@ RABBITMQ_HOST = os.getenv('RABBITMQ_HOST', 'localhost')
 EXCHANGE_NAME = os.getenv('RABBITMQ_EXCHANGE', 'market_data_exchange')
 RABBITMQ_USER = os.getenv('RABBITMQ_USER', 'admin')
 RABBITMQ_PASS = os.getenv('RABBITMQ_PASS', 'supersecretpassword')
+
+# Database Configuration
+DB_URL = os.getenv("DATABASE_URL")
+
+DEFAULT_WATCHLIST = ["RELIANCE", "HDFCBANK", "TCS", "INFY", "ICICIBANK", "NIFTY"]
+
+def get_watchlist_from_db():
+    """Fetch active symbols from the watchlist table. Falls back to hardcoded defaults."""
+    if not DB_URL:
+        logging.warning("DATABASE_URL not set, using default watchlist.")
+        return DEFAULT_WATCHLIST
+    try:
+        conn = psycopg2.connect(DB_URL)
+        cursor = conn.cursor()
+        cursor.execute("SELECT symbol FROM watchlist WHERE is_active = true")
+        rows = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        if rows:
+            symbols = [r[0] for r in rows]
+            logging.info(f"Loaded {len(symbols)} symbols from watchlist DB: {symbols}")
+            return symbols
+        else:
+            logging.warning("Watchlist table is empty, using default watchlist.")
+            return DEFAULT_WATCHLIST
+    except Exception as e:
+        logging.error(f"Failed to load watchlist from DB: {e}. Using defaults.")
+        return DEFAULT_WATCHLIST
 
 def setup_rabbitmq():
     """Establishes connection to RabbitMQ and sets up the Topic Exchange."""
@@ -101,16 +130,73 @@ def fetch_and_publish_eod_data(channel, symbol):
     except Exception as e:
         logging.error(f"Error fetching/publishing data for {symbol}: {e}")
 
+def fetch_and_publish_intraday_data(channel, symbol, timeframes=None):
+    """Fetches intraday candle data and publishes it for caching in the database."""
+    if timeframes is None:
+        timeframes = ['15m', '1h']
+    
+    yf_symbol = f"{symbol}.NS"
+    
+    for tf in timeframes:
+        try:
+            logging.info(f"Fetching {tf} data for {symbol}...")
+            ticker = yf.Ticker(yf_symbol)
+            # 5m/15m → last 5 days max, 1h → last 60 days
+            period = '5d' if tf in ['5m', '15m'] else '60d'
+            df = ticker.history(period=period, interval=tf)
+            
+            if df.empty:
+                logging.warning(f"No {tf} data for {symbol}")
+                continue
+            
+            df.reset_index(inplace=True)
+            
+            # Normalize column name
+            time_col = 'Datetime' if 'Datetime' in df.columns else 'Date'
+            
+            candles = []
+            for _, row in df.iterrows():
+                candles.append({
+                    'timestamp': str(row[time_col]),
+                    'open': float(row['Open']),
+                    'high': float(row['High']),
+                    'low': float(row['Low']),
+                    'close': float(row['Close']),
+                    'volume': int(row['Volume']),
+                })
+            
+            payload = {
+                'symbol': symbol,
+                'timeframe': tf,
+                'data': candles
+            }
+            
+            channel.basic_publish(
+                exchange=EXCHANGE_NAME,
+                routing_key=f'market.intraday.{symbol}',
+                body=json.dumps(payload),
+                properties=pika.BasicProperties(delivery_mode=2)
+            )
+            logging.info(f"📦 Published {len(candles)} {tf} candles for {symbol} to cache")
+            
+        except Exception as e:
+            logging.error(f"Error fetching {tf} data for {symbol}: {e}")
+
 if __name__ == "__main__":
     connection, channel = setup_rabbitmq()
     
     if connection and channel:
-        # Let's test it with a mini-watchlist of heavyweights
-        watchlist = ["RELIANCE", "HDFCBANK", "TCS", "INFY", "ICICIBANK","NIFTY"]
+        # Dynamically fetch watchlist from the database
+        watchlist = get_watchlist_from_db()
         
         logging.info("Starting EOD Data Ingestion Pipeline...")
         for stock in watchlist:
             fetch_and_publish_eod_data(channel, stock)
+        
+        # Also fetch and cache intraday data for screener
+        logging.info("Starting Intraday Data Cache Pipeline...")
+        for stock in watchlist:
+            fetch_and_publish_intraday_data(channel, stock)
             
         # Close connection cleanly
         connection.close()

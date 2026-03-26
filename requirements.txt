@@ -6,9 +6,12 @@ pika
 pyttsx3
 requests
 yfinance
-google-generativeai
+openai
 lxml
 beautifulsoup4
 py-vollib
 psycopg2-binary
 feedparser
+fastapi
+dotenv
+uvicorn

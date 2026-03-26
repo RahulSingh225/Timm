@@ -1,35 +1,33 @@
-import pika
+import pika  # type: ignore
 import json
 import os
-import pyttsx3
+import pyttsx3  # type: ignore
 import logging
-import google.generativeai as genai
-from dotenv import load_dotenv
+from openai import OpenAI  # type: ignore
+from dotenv import load_dotenv  # type: ignore
 
 # Setup Logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - [HEAD ANALYST] - %(message)s')
 
 # Configuration
 load_dotenv()
-RABBITMQ_HOST = os.getenv("RABBITMQ_HOST")
-RABBITMQ_USER = os.getenv("RABBITMQ_USER")
-RABBITMQ_PASS = os.getenv("RABBITMQ_PASS")
-EXCHANGE_NAME = os.getenv("RABBITMQ_EXCHANGE")
-QUEUE_NAME = os.getenv("RABBITMQ_SWING_QUEUE")
+RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "localhost")
+RABBITMQ_USER = os.getenv("RABBITMQ_USER", "admin")
+RABBITMQ_PASS = os.getenv("RABBITMQ_PASS", "supersecretpassword")
+EXCHANGE_NAME = os.getenv("RABBITMQ_EXCHANGE", "market_data_exchange")
+QUEUE_NAME = os.getenv("RABBITMQ_SWING_QUEUE", "swing_analysis_queue")
 
-# Load Environment Variables and Configure Gemini
+# Load Environment Variables and Configure Local LLM (Ollama)
+OPENAI_API_BASE = os.getenv("OPENAI_API_BASE", "http://localhost:11434/v1")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "ollama")
+AI_MODEL = os.getenv("AI_MODEL", "llama3.2")
 
-GOOGLE_API_KEY = os.getenv("GEMINI_API_KEY")
+logging.info(f"Connecting to Local LLM at {OPENAI_API_BASE} using model {AI_MODEL}")
 
-if not GOOGLE_API_KEY:
-    logging.error("GEMINI_API_KEY missing from .env file!")
-    exit(1)
-
-genai.configure(api_key=GOOGLE_API_KEY)
-
-# Use the fast, cost-effective Flash model for rapid analysis
-# You can upgrade to 'gemini-1.5-pro' if you need deep, complex reasoning later
-model = genai.GenerativeModel('gemini-2.5-flash')
+client = OpenAI(
+    base_url=OPENAI_API_BASE,
+    api_key=OPENAI_API_KEY
+)
 
 # Initialize Offline Text-to-Speech Engine
 try:
@@ -48,7 +46,7 @@ def speak_text(text):
 
 def generate_market_brief(alert_data):
     """
-    Sends the structured JSON alert to the Gemini API
+    Sends the structured JSON alert to the local LLM API
     to generate a fast, punchy trading brief.
     """
     symbol = alert_data.get('symbol', 'UNKNOWN')
@@ -61,23 +59,30 @@ def generate_market_brief(alert_data):
     {json.dumps(alert_data, indent=2)}
     
     Your task:
-    Provide a very brief, punchy, 3-sentence maximum audio script for the head trader.
+    Provide a very brief, punchy, 3-sentence maximum script for the head trader.
     Do not use pleasantries. Do not explain what EMA or RSI is. 
     State the stock, state the technical setup, and state the logical next step or risk.
     Make it sound like a fast-paced prop desk update.
     """
 
     try:
-        logging.info(f"🧠 Asking Gemini to analyze setup for {symbol}...")
+        logging.info(f"🧠 Asking Local LLM to analyze setup for {symbol}...")
         
-        # Call the Gemini API
-        response = model.generate_content(system_prompt)
+        response = client.chat.completions.create(
+            model=AI_MODEL,
+            messages=[
+                {"role": "system", "content": "You are a fast-paced quantitative prop desk analyst."},
+                {"role": "user", "content": system_prompt}
+            ],
+            temperature=0.3,
+            max_tokens=150
+        )
         
-        return response.text.strip()
+        return response.choices[0].message.content.strip()
         
     except Exception as e:
-        logging.error(f"Failed to communicate with Gemini API: {e}")
-        return "System error: Unable to contact the Gemini analysis server."
+        logging.error(f"Failed to communicate with Local LLM API: {e}")
+        return "System error: Unable to contact the Local Analysis server."
 
 def process_alert(ch, method, properties, body):
     """

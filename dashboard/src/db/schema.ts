@@ -1,4 +1,4 @@
-import { pgTable, serial, text, varchar, timestamp, integer, jsonb, boolean, real } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, varchar, timestamp, integer, jsonb, boolean, real, unique } from "drizzle-orm/pg-core";
 
 // 1. DYNAMIC WATCHLIST
 // Controls what the Python agents actually track.
@@ -112,4 +112,80 @@ export const vectorSignals = pgTable("vector_signals", {
     signal: varchar("signal", { length: 20 }),
     candleVector: jsonb("candle_vector"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// ============================================================
+// CO-PILOT EXPANSION TABLES
+// ============================================================
+
+// 9. INTRADAY CANDLES CACHE
+// Stores fetched intraday data to avoid re-hitting yfinance rate limits.
+// Unique on (symbol, timeframe, candle_time) prevents duplicates on refetch.
+export const intradayCandles = pgTable("intraday_candles", {
+    id: serial("id").primaryKey(),
+    symbol: varchar("symbol", { length: 50 }).notNull(),
+    timeframe: varchar("timeframe", { length: 10 }).notNull(), // '5m', '15m', '1h', '1d'
+    candleTime: timestamp("candle_time").notNull(),
+    open: real("open").notNull(),
+    high: real("high").notNull(),
+    low: real("low").notNull(),
+    close: real("close").notNull(),
+    volume: integer("volume").notNull(),
+    fetchedAt: timestamp("fetched_at").defaultNow().notNull(),
+}, (table) => [
+    unique("intraday_candles_unique").on(table.symbol, table.timeframe, table.candleTime),
+]);
+
+// 10. SCREENED STOCKS — Output of the Screener Agent
+// Stocks that passed screening filters for intraday or swing setups.
+export const screenedStocks = pgTable("screened_stocks", {
+    id: serial("id").primaryKey(),
+    symbol: varchar("symbol", { length: 50 }).notNull(),
+    screenedAt: timestamp("screened_at").defaultNow().notNull(),
+    timeframe: varchar("timeframe", { length: 10 }).notNull(), // '5m', '15m', '1h', '1d'
+    tradeType: varchar("trade_type", { length: 20 }).notNull(), // 'INTRADAY', 'SWING'
+    setupType: varchar("setup_type", { length: 50 }).notNull(), // 'GAP_UP', 'VOLUME_SPIKE', 'VWAP_RECLAIM', etc.
+    entryPrice: real("entry_price"),
+    targetPrice: real("target_price"),
+    stoplossPrice: real("stoploss_price"),
+    targetPct: real("target_pct"),  // e.g. 2.5 for 2.5%
+    riskPct: real("risk_pct"),      // e.g. 1.0 for 1% risk
+    confidence: real("confidence"), // 0-100
+    signals: jsonb("signals").notNull(), // Array of reasons this stock was screened
+    status: varchar("status", { length: 20 }).default("ACTIVE").notNull(), // 'ACTIVE', 'TRIGGERED', 'EXPIRED'
+});
+
+// 11. ACTIVE TRADES — Stop-Loss / Target Tracking
+// Tracks trades you enter, monitors against SL and target levels.
+export const activeTrades = pgTable("active_trades", {
+    id: serial("id").primaryKey(),
+    symbol: varchar("symbol", { length: 50 }).notNull(),
+    tradeType: varchar("trade_type", { length: 30 }).notNull(), // 'INTRADAY_STOCK', 'OPTIONS_SCALP', 'SWING'
+    entryPrice: real("entry_price").notNull(),
+    stoploss: real("stoploss").notNull(),
+    target: real("target").notNull(),
+    currentPrice: real("current_price"),
+    entryTime: timestamp("entry_time").defaultNow().notNull(),
+    exitTime: timestamp("exit_time"),
+    status: varchar("status", { length: 20 }).default("OPEN").notNull(), // 'OPEN', 'SL_HIT', 'TARGET_HIT', 'MANUAL_EXIT'
+    pnlPct: real("pnl_pct"),
+    notes: text("notes"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// 12. GLOBAL CUES — Background Confidence Signals
+// Pre-market data from US markets, VIX, SGX Nifty, USD/INR.
+export const globalCues = pgTable("global_cues", {
+    id: serial("id").primaryKey(),
+    capturedAt: timestamp("captured_at").defaultNow().notNull(),
+    spyChangePct: real("spy_change_pct"),
+    qqqChangePct: real("qqq_change_pct"),
+    djiChangePct: real("dji_change_pct"),
+    vixValue: real("vix_value"),
+    vixChangePct: real("vix_change_pct"),
+    sgxNifty: real("sgx_nifty"),
+    sgxChangePct: real("sgx_change_pct"),
+    usdInr: real("usd_inr"),
+    giftNifty: real("gift_nifty"),
+    overallBias: varchar("overall_bias", { length: 20 }), // 'RISK_ON', 'RISK_OFF', 'NEUTRAL'
 });

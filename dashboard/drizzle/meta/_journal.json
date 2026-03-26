@@ -15,6 +15,20 @@
       "when": 1774473071743,
       "tag": "0001_naive_ted_forrester",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1774527471766,
+      "tag": "0002_aspiring_starjammers",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1774536667292,
+      "tag": "0003_acoustic_old_lace",
+      "breakpoints": true
     }
   ]
 }

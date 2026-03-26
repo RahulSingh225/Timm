@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db/index';
-import { marketAlerts, fiiDiiFlows, newsEvents, participantData } from '@/db/schema';
+import { marketAlerts, fiiDiiFlows, newsEvents, participantData, globalCues, screenedStocks } from '@/db/schema';
 import { desc, eq, sql } from 'drizzle-orm';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import OpenAI from 'openai';
 
-// Initialize Gemini
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
+// Initialize OpenAI client pointed at Local LLM (Ollama)
+const openai = new OpenAI({
+    baseURL: process.env.OPENAI_API_BASE || 'http://localhost:11434/v1',
+    apiKey: process.env.OPENAI_API_KEY || 'ollama',
+});
 
 export async function POST(req: NextRequest) {
     try {
@@ -55,6 +58,17 @@ export async function POST(req: NextRequest) {
             .orderBy(desc(newsEvents.publishedAt))
             .limit(3);
 
+        // [CO-PILOT EXPANSION] Fetch Global Cues & Screened Setups
+        const latestGlobalCues = await db.select()
+            .from(globalCues)
+            .orderBy(desc(globalCues.capturedAt))
+            .limit(1);
+
+        const recentSetups = await db.select()
+            .from(screenedStocks)
+            .orderBy(desc(screenedStocks.confidence))
+            .limit(3);
+
         // ==========================================
         // 2. CONSTRUCT THE CONTEXT ENVELOPE
         // ==========================================
@@ -74,10 +88,18 @@ export async function POST(req: NextRequest) {
         System Sentiment Score: ${latestSmartMoney[0].sentimentScore}/100
       ` : 'No recent general FII/DII aggregate flows available.'}
       
-      [GRANULAR PARTICIPANT NET OPTIONS (Contracts)]
-      ${recentParticipantData.length > 0 ? recentParticipantData.map(p =>
-            `- ${p.participantType}: Net Calls [${p.netIndexCall}], Net Puts [${p.netIndexPut}], Net IdxFut [${p.netIndexFutures}]`
-        ).join('\n') : 'No granular options participant data available.'}
+      [GLOBAL MACRO CUES]
+      ${latestGlobalCues.length > 0 ? `
+        Bias: ${latestGlobalCues[0].overallBias}
+        VIX: ${latestGlobalCues[0].vixValue} (${latestGlobalCues[0].vixChangePct}%)
+        SPY: ${latestGlobalCues[0].spyChangePct}% | QQQ: ${latestGlobalCues[0].qqqChangePct}%
+        SGX NIFTY: ${latestGlobalCues[0].sgxNifty} (${latestGlobalCues[0].sgxChangePct}%)
+      ` : 'No pre-market global cues available.'}
+
+      [TOP SCREENED INTRADAY SETUPS]
+      ${recentSetups.length > 0 ? recentSetups.map(s => 
+            `- ${s.symbol} [${s.tradeType}]: ${s.setupType} Setup. Target: ${s.targetPct}%. Confidence: ${s.confidence}/100.`
+        ).join('\n') : 'No high-confidence screened setups currently actively tracked.'}
 
       [RECENT TECHNICAL ALERTS]
       ${recentAlerts.length > 0 ? recentAlerts.map(a =>
@@ -95,21 +117,27 @@ export async function POST(req: NextRequest) {
     `;
 
         // ==========================================
-        // 3. CALL GEMINI API
+        // 3. CALL LOCAL LLM API via OpenAI SDK
         // ==========================================
-        // Using 2.5-flash since you recently updated to it, or 2.5-pro for reasoning
-        const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+        const aiModel = process.env.AI_MODEL || 'llama3.2';
+        
+        // Format history for OpenAI chat format
+        const messages = history.map((msg: any) => ({
+            role: msg.role === 'user' ? 'user' : 'assistant',
+            content: msg.content,
+        }));
+        
+        // Ensure system prompt is the first message
+        messages.unshift({ role: 'system', content: systemPrompt });
 
-        // Create a chat session to maintain conversation history
-        const chat = model.startChat({
-            history: history.map((msg: any) => ({
-                role: msg.role === 'user' ? 'user' : 'model',
-                parts: [{ text: msg.content }],
-            })),
+        const response = await openai.chat.completions.create({
+            model: aiModel,
+            messages: messages,
+            temperature: 0.3,
+            max_tokens: 500,
         });
 
-        const result = await chat.sendMessage(systemPrompt);
-        const responseText = result.response.text();
+        const responseText = response.choices[0]?.message?.content || "No response generated.";
 
         return NextResponse.json({ reply: responseText, response: responseText });
 

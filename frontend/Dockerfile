@@ -15,9 +15,9 @@ RUN npm run build
 # Uncomment the following line in case you want to disable telemetry during the build.
 # ENV NEXT_TELEMETRY_DISABLED 1
 
-EXPOSE 3000
+EXPOSE 4400
 
-ENV PORT 3000
+ENV PORT 4400
 
 # Next.js uses CMD ["npm", "start"] but we'll use dev mode if it's for easier debugging,
 # or start for production. Standard is start.

@@ -160,5 +160,5 @@ def run_ingestion(background_tasks: BackgroundTasks):
     return {"message": "Data ingestion initiated in the background."}
 
 if __name__ == "__main__":
-    logging.info("Starting Web Server. Access the API at http://localhost:8000")
-    uvicorn.run("main:app", host="0.0.0.0", port=8000)
+    logging.info("Starting Web Server. Access the API at http://localhost:4500")
+    uvicorn.run("main:app", host="0.0.0.0", port=4500)

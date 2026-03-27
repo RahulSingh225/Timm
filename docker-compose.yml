@@ -37,7 +37,7 @@ services:
     container_name: quant_desk_frontend
     restart: always
     ports:
-      - "3000:3000"
+      - "4400:4400"
     env_file:
       - .env
     # environment:

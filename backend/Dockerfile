@@ -19,7 +19,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the rest of the application
 COPY . .
-
+EXPOSE 4500
 # In docker-compose, we will override the CMD for different micro-services
 # But we can set a default worker
 CMD ["python", "main.py"]

@@ -80,7 +80,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: nse_flows_scraper
-    restart: never
+    restart: no
     command: ["python", "nse_flows_scraper.py"]
     # depends_on:
     #   - rabbitmq
@@ -93,7 +93,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: nsdl_sector_scraper
-    restart: never
+    restart: no
     command: ["python", "nsdl_sector_scraper.py"]
     # depends_on:
     #   - rabbitmq

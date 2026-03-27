@@ -15,3 +15,6 @@ feedparser
 fastapi
 dotenv
 uvicorn
+boto3
+numpy
+scipy

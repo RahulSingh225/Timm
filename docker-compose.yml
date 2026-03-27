@@ -2,32 +2,32 @@ version: "3.8"
 
 services:
   # MESSAGING SYSTEM
-  rabbitmq:
-    image: rabbitmq:3-management
-    container_name: quant_desk_queue
-    restart: always
-    environment:
-      - RABBITMQ_DEFAULT_USER=${RABBITMQ_USER:-admin}
-      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASS:-supersecretpassword}
-    ports:
-      - "5672:5672"
-      - "15672:15672"
-    volumes:
-      - rabbitmq_data:/var/lib/rabbitmq
+  # rabbitmq:
+  #   image: rabbitmq:3-management
+  #   container_name: quant_desk_queue
+  #   restart: always
+  #   environment:
+  #     - RABBITMQ_DEFAULT_USER=${RABBITMQ_USER:-admin}
+  #     - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASS:-supersecretpassword}
+  #   ports:
+  #     - "5672:5672"
+  #     - "15672:15672"
+  #   volumes:
+  #     - rabbitmq_data:/var/lib/rabbitmq
 
   # DATABASE
-  postgres:
-    image: postgres:15-alpine
-    container_name: quant_desk_db
-    restart: always
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-admin}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-adminpassword}
-      POSTGRES_DB: ${POSTGRES_DB:-propdesk}
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
+  # postgres:
+  #   image: postgres:15-alpine
+  #   container_name: quant_desk_db
+  #   restart: always
+  #   environment:
+  #     POSTGRES_USER: ${POSTGRES_USER:-admin}
+  #     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-adminpassword}
+  #     POSTGRES_DB: ${POSTGRES_DB:-propdesk}
+  #   ports:
+  #     - "5432:5432"
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
 
   # FRONTEND (Next.js)
   frontend:
@@ -38,12 +38,14 @@ services:
     restart: always
     ports:
       - "3000:3000"
-    environment:
-      - NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-adminpassword}@postgres:5432/${POSTGRES_DB:-propdesk}
-    depends_on:
-      - postgres
-      - rabbitmq
+    env_file:
+      - .env
+    # environment:
+    #   - NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
+    #   - DATABASE_URL=postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-adminpassword}@postgres:5432/${POSTGRES_DB:-propdesk}
+    # # depends_on:
+    #   - postgres
+    #   - rabbitmq
 
   # DB VAULT WORKER (Bridge between RabbitMQ and Postgres)
   db_vault_worker:
@@ -53,9 +55,9 @@ services:
     container_name: db_vault_worker
     restart: always
     command: ["python", "db_vault_worker.py"]
-    depends_on:
-      - rabbitmq
-      - postgres
+    # depends_on:
+    #   - rabbitmq
+    #   - postgres
     env_file:
       - .env
 
@@ -67,8 +69,8 @@ services:
     container_name: candle_vector_agent
     restart: always
     command: ["python", "candle_vector_agent.py"]
-    depends_on:
-      - rabbitmq
+    # depends_on:
+    #   - rabbitmq
     env_file:
       - .env
 
@@ -80,8 +82,8 @@ services:
     container_name: nse_flows_scraper
     restart: always
     command: ["python", "nse_flows_scraper.py"]
-    depends_on:
-      - rabbitmq
+    # depends_on:
+    #   - rabbitmq
     env_file:
       - .env
 
@@ -93,11 +95,11 @@ services:
     container_name: nsdl_sector_scraper
     restart: always
     command: ["python", "nsdl_sector_scraper.py"]
-    depends_on:
-      - rabbitmq
+    # depends_on:
+    #   - rabbitmq
     env_file:
       - .env
 
-volumes:
-  rabbitmq_data:
-  postgres_data:
+# volumes:
+#   rabbitmq_data:
+#   postgres_data:

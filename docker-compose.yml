@@ -106,6 +106,8 @@ services:
       dockerfile: Dockerfile
     container_name: backend
     restart: always
+    ports:
+      - "4500:4500"
     # depends_on:
     #   - rabbitmq
     env_file:

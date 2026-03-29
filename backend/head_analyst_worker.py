@@ -15,7 +15,7 @@ RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "localhost")
 RABBITMQ_USER = os.getenv("RABBITMQ_USER", "admin")
 RABBITMQ_PASS = os.getenv("RABBITMQ_PASS", "supersecretpassword")
 EXCHANGE_NAME = os.getenv("RABBITMQ_EXCHANGE", "market_data_exchange")
-QUEUE_NAME = os.getenv("RABBITMQ_SWING_QUEUE", "swing_analysis_queue")
+QUEUE_NAME = 'head_analyst_queue'
 
 # Load Environment Variables and Configure Local LLM (Ollama)
 OPENAI_API_BASE = os.getenv("OPENAI_API_BASE", "http://localhost:11434/v1")
@@ -95,7 +95,7 @@ def process_alert(ch, method, properties, body):
         
         logging.info(f"🚨 ALERT RECEIVED from {agent_source} Agent for {symbol}")
 
-        # Feed it to Gemini
+        # Feed it to LLM
         brief = generate_market_brief(alert_data)
         
         # Print output
@@ -107,6 +107,16 @@ def process_alert(ch, method, properties, body):
 
         # Speak output
         speak_text(brief)
+
+        # Republish the alert with the LLM brief attached so the frontend SSE can show it
+        enriched_alert = {**alert_data, "summary": brief, "signal_type": "BULLISH" if any(kw in str(alert_data.get('signals', [])).upper() for kw in ['BULLISH', 'GOLDEN', 'BOUNCE', 'BUY']) else "BEARISH" if any(kw in str(alert_data.get('signals', [])).upper() for kw in ['BEARISH', 'DEATH', 'DROP', 'SELL']) else "NEUTRAL"}
+        ch.basic_publish(
+            exchange=EXCHANGE_NAME,
+            routing_key=f'alert.enriched.{symbol}',
+            body=json.dumps(enriched_alert),
+            properties=pika.BasicProperties(delivery_mode=2)
+        )
+        logging.info(f"📤 Published enriched alert for {symbol} with LLM brief")
 
         # Acknowledge message
         ch.basic_ack(delivery_tag=method.delivery_tag)

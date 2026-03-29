@@ -52,7 +52,7 @@ export default function TradingCoPilot() {
                 <Database className="text-purple-500" size={24} />
                 <div>
                     <h1 className="text-xl font-bold text-white">RAG Co-Pilot</h1>
-                    <p className="text-xs text-neutral-500">Connected to PostgreSQL Vault & Gemini 1.5 Pro</p>
+                    <p className="text-xs text-neutral-500">Connected to PostgreSQL Vault & Local LLM (Ollama)</p>
                 </div>
             </div>
 

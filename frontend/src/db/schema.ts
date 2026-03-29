@@ -189,3 +189,26 @@ export const globalCues = pgTable("global_cues", {
     giftNifty: real("gift_nifty"),
     overallBias: varchar("overall_bias", { length: 20 }), // 'RISK_ON', 'RISK_OFF', 'NEUTRAL'
 });
+
+// 13. AGENT RUNS — Observability for Agent + LLM Invocations
+// Tracks every agent run, LLM request/response, and errors for full pipeline visibility.
+export const agentRuns = pgTable("agent_runs", {
+    id: serial("id").primaryKey(),
+    agentName: varchar("agent_name", { length: 50 }).notNull(), // 'swing', 'head_analyst', 'screener', 'options', 'vector', etc.
+    runStatus: varchar("run_status", { length: 20 }).default("RUNNING").notNull(), // 'RUNNING', 'SUCCESS', 'FAILED', 'TIMEOUT'
+    startedAt: timestamp("started_at").defaultNow().notNull(),
+    finishedAt: timestamp("finished_at"),
+    durationMs: integer("duration_ms"),
+    // LLM metadata
+    llmModel: varchar("llm_model", { length: 50 }), // e.g. 'llama3.2', null if no LLM call
+    llmPromptTokens: integer("llm_prompt_tokens"),
+    llmCompletionTokens: integer("llm_completion_tokens"),
+    llmPromptPreview: text("llm_prompt_preview"), // First 500 chars of prompt
+    llmResponsePreview: text("llm_response_preview"), // First 500 chars of response
+    // Context
+    symbolProcessed: varchar("symbol_processed", { length: 50 }),
+    messageCount: integer("message_count"), // How many messages processed in this run
+    errorMessage: text("error_message"),
+    metadata: jsonb("metadata"), // Flexible field for extra context
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+});

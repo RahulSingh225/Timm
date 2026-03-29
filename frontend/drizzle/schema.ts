@@ -91,3 +91,102 @@ export const tradewiseFlows = pgTable("tradewise_flows", {
 	instrumentType: varchar("instrument_type", { length: 10 }),
 	createdAt: timestamp("created_at", { mode: 'string' }).defaultNow().notNull(),
 });
+
+export const vectorSignals = pgTable("vector_signals", {
+	id: serial().primaryKey().notNull(),
+	symbol: varchar({ length: 50 }).notNull(),
+	timestamp: timestamp({ mode: 'string' }),
+	rawScalar: real("raw_scalar"),
+	ivAdjustedScalar: real("iv_adjusted_scalar"),
+	currentAtmIv: real("current_atm_iv"),
+	signedAccumulation: real("signed_accumulation"),
+	predictedNextMove: real("predicted_next_move"),
+	linearM: real("linear_m"),
+	linearB: real("linear_b"),
+	confidence: real(),
+	signal: varchar({ length: 20 }),
+	candleVector: jsonb("candle_vector"),
+	createdAt: timestamp("created_at", { mode: 'string' }).defaultNow().notNull(),
+});
+
+export const activeTrades = pgTable("active_trades", {
+	id: serial().primaryKey().notNull(),
+	symbol: varchar({ length: 50 }).notNull(),
+	tradeType: varchar("trade_type", { length: 30 }).notNull(),
+	entryPrice: real("entry_price").notNull(),
+	stoploss: real().notNull(),
+	target: real().notNull(),
+	currentPrice: real("current_price"),
+	entryTime: timestamp("entry_time", { mode: 'string' }).defaultNow().notNull(),
+	exitTime: timestamp("exit_time", { mode: 'string' }),
+	status: varchar({ length: 20 }).default('OPEN').notNull(),
+	pnlPct: real("pnl_pct"),
+	notes: text(),
+	createdAt: timestamp("created_at", { mode: 'string' }).defaultNow().notNull(),
+});
+
+export const globalCues = pgTable("global_cues", {
+	id: serial().primaryKey().notNull(),
+	capturedAt: timestamp("captured_at", { mode: 'string' }).defaultNow().notNull(),
+	spyChangePct: real("spy_change_pct"),
+	qqqChangePct: real("qqq_change_pct"),
+	djiChangePct: real("dji_change_pct"),
+	vixValue: real("vix_value"),
+	vixChangePct: real("vix_change_pct"),
+	sgxNifty: real("sgx_nifty"),
+	sgxChangePct: real("sgx_change_pct"),
+	usdInr: real("usd_inr"),
+	giftNifty: real("gift_nifty"),
+	overallBias: varchar("overall_bias", { length: 20 }),
+});
+
+export const intradayCandles = pgTable("intraday_candles", {
+	id: serial().primaryKey().notNull(),
+	symbol: varchar({ length: 50 }).notNull(),
+	timeframe: varchar({ length: 10 }).notNull(),
+	candleTime: timestamp("candle_time", { mode: 'string' }).notNull(),
+	open: real().notNull(),
+	high: real().notNull(),
+	low: real().notNull(),
+	close: real().notNull(),
+	volume: integer().notNull(),
+	fetchedAt: timestamp("fetched_at", { mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	unique("intraday_candles_unique").on(table.symbol, table.timeframe, table.candleTime),
+]);
+
+export const screenedStocks = pgTable("screened_stocks", {
+	id: serial().primaryKey().notNull(),
+	symbol: varchar({ length: 50 }).notNull(),
+	screenedAt: timestamp("screened_at", { mode: 'string' }).defaultNow().notNull(),
+	timeframe: varchar({ length: 10 }).notNull(),
+	tradeType: varchar("trade_type", { length: 20 }).notNull(),
+	setupType: varchar("setup_type", { length: 50 }).notNull(),
+	entryPrice: real("entry_price"),
+	targetPrice: real("target_price"),
+	stoplossPrice: real("stoploss_price"),
+	targetPct: real("target_pct"),
+	riskPct: real("risk_pct"),
+	confidence: real(),
+	signals: jsonb().notNull(),
+	status: varchar({ length: 20 }).default('ACTIVE').notNull(),
+});
+
+export const agentRuns = pgTable("agent_runs", {
+	id: serial().primaryKey().notNull(),
+	agentName: varchar("agent_name", { length: 50 }).notNull(),
+	runStatus: varchar("run_status", { length: 20 }).default('RUNNING').notNull(),
+	startedAt: timestamp("started_at", { mode: 'string' }).defaultNow().notNull(),
+	finishedAt: timestamp("finished_at", { mode: 'string' }),
+	durationMs: integer("duration_ms"),
+	llmModel: varchar("llm_model", { length: 50 }),
+	llmPromptTokens: integer("llm_prompt_tokens"),
+	llmCompletionTokens: integer("llm_completion_tokens"),
+	llmPromptPreview: text("llm_prompt_preview"),
+	llmResponsePreview: text("llm_response_preview"),
+	symbolProcessed: varchar("symbol_processed", { length: 50 }),
+	messageCount: integer("message_count"),
+	errorMessage: text("error_message"),
+	metadata: jsonb(),
+	createdAt: timestamp("created_at", { mode: 'string' }).defaultNow().notNull(),
+});

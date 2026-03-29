@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db/index';
 import { marketAlerts, fiiDiiFlows, newsEvents, participantData, globalCues, screenedStocks, agentRuns } from '@/db/schema';
-import { desc, eq, sql } from 'drizzle-orm';
+import { desc, eq } from 'drizzle-orm';
 import OpenAI from 'openai';
 
 // Initialize OpenAI client pointed at Local LLM (Ollama)
@@ -14,6 +14,7 @@ export async function POST(req: NextRequest) {
     const runStartTime = Date.now();
     let llmPromptPreview = '';
     let llmResponsePreview = '';
+
     try {
         const body = await req.json();
         const query = body.message || body.query;
@@ -27,8 +28,6 @@ export async function POST(req: NextRequest) {
         // ==========================================
         // 1. RETRIEVE ON-PREMISES CONTEXT (The RAG)
         // ==========================================
-
-        // Fetch the 5 most recent technical alerts (Filter by symbol if provided)
         let recentAlerts;
         if (symbol) {
             recentAlerts = await db.select()
@@ -43,25 +42,21 @@ export async function POST(req: NextRequest) {
                 .limit(5);
         }
 
-        // Fetch the latest FII/DII Cash & Derivative positioning
         const latestSmartMoney = await db.select()
             .from(fiiDiiFlows)
             .orderBy(desc(fiiDiiFlows.tradeDate))
             .limit(1);
 
-        // Fetch granular participant data (Net indexing limits context, but good for precision)
         const recentParticipantData = await db.select()
             .from(participantData)
             .orderBy(desc(participantData.tradeDate))
             .limit(4);
 
-        // Fetch the latest 3 macroeconomic news events
         const recentNews = await db.select()
             .from(newsEvents)
             .orderBy(desc(newsEvents.publishedAt))
             .limit(3);
 
-        // [CO-PILOT EXPANSION] Fetch Global Cues & Screened Setups
         const latestGlobalCues = await db.select()
             .from(globalCues)
             .orderBy(desc(globalCues.capturedAt))
@@ -100,7 +95,7 @@ export async function POST(req: NextRequest) {
       ` : 'No pre-market global cues available.'}
 
       [TOP SCREENED INTRADAY SETUPS]
-      ${recentSetups.length > 0 ? recentSetups.map(s => 
+      ${recentSetups.length > 0 ? recentSetups.map(s =>
             `- ${s.symbol} [${s.tradeType}]: ${s.setupType} Setup. Target: ${s.targetPct}%. Confidence: ${s.confidence}/100.`
         ).join('\n') : 'No high-confidence screened setups currently actively tracked.'}
 
@@ -123,14 +118,12 @@ export async function POST(req: NextRequest) {
         // 3. CALL LOCAL LLM API via OpenAI SDK
         // ==========================================
         const aiModel = process.env.AI_MODEL || 'llama3.2';
-        
-        // Format history for OpenAI chat format
+
         const messages = history.map((msg: any) => ({
             role: msg.role === 'user' ? 'user' : 'assistant',
             content: msg.content,
         }));
-        
-        // Ensure system prompt is the first message
+
         messages.unshift({ role: 'system', content: systemPrompt });
 
         llmPromptPreview = systemPrompt.substring(0, 500);
@@ -144,9 +137,10 @@ export async function POST(req: NextRequest) {
 
         const responseText = response.choices[0]?.message?.content || "No response generated.";
         llmResponsePreview = responseText.substring(0, 500);
+
         const durationMs = Date.now() - runStartTime;
 
-        // Log the agent run for observability
+        // Log the agent run
         try {
             await db.insert(agentRuns).values({
                 agentName: 'rag_copilot',
@@ -158,7 +152,7 @@ export async function POST(req: NextRequest) {
                 llmPromptPreview,
                 llmResponsePreview,
                 symbolProcessed: symbol || null,
-                metadata: { query: query.substring(0, 200) },
+                metadata: { query: query.substring(0, 200), alertsUsed: recentAlerts.length },
             });
         } catch (logErr) {
             console.error('Failed to log agent run:', logErr);
@@ -168,6 +162,7 @@ export async function POST(req: NextRequest) {
 
     } catch (error: any) {
         const durationMs = Date.now() - runStartTime;
+        // Log failure
         try {
             await db.insert(agentRuns).values({
                 agentName: 'rag_copilot',
@@ -180,7 +175,8 @@ export async function POST(req: NextRequest) {
         } catch (logErr) {
             console.error('Failed to log agent run error:', logErr);
         }
-        console.error('RAG API Error:', error);
+
+        console.error('Chat API Error:', error);
         return NextResponse.json({ error: error.message || 'Failed to generate response' }, { status: 500 });
     }
 }

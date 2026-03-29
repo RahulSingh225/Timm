@@ -18,7 +18,7 @@ workers_registry = {
     "options": "options_agent_worker.py",
     "swing": "swing_agent_worker.py",
     "head": "head_analyst_worker.py",
-    "vector": "vector_agent_worker.py",
+    "vector": "candle_vector_agent.py",
     "screener": "screener_agent_worker.py",
     "cues": "global_cues_producer.py",
     "monitor": "price_monitor_worker.py"

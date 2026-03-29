@@ -37,6 +37,11 @@ def process_command(ch, method, properties, body):
             logging.info("Executing script to seed DB (Historical Run)...")
             subprocess.run([sys.executable, "seed_historical.py"], check=False)
             logging.info("✅ Seed action called.")
+
+        elif task == 'sync_yfinance':
+            logging.info("Executing yFinance data ingestion...")
+            subprocess.run([sys.executable, "yfinance_producer.py"], check=False)
+            logging.info("✅ yFinance ingestion completed.")
             
         else:
             logging.warning(f"Unknown task received: {task}")

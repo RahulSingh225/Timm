@@ -18,3 +18,4 @@ uvicorn
 boto3
 numpy
 scipy
+schedule

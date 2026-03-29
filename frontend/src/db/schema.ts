@@ -38,7 +38,9 @@ export const participantData = pgTable("participant_data", {
     netStockFutures: integer("net_stock_futures").notNull(),
 
     createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => [
+    unique("participant_data_unique").on(table.tradeDate, table.participantType),
+]);
 
 // 4. MACRO & FINANCIAL NEWS
 export const newsEvents = pgTable("news_events", {
@@ -64,7 +66,9 @@ export const optionsFootprint = pgTable("options_footprint", {
     changeInOI: integer("change_in_oi").notNull(),
     volume: integer("volume").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => [
+    unique("options_footprint_unique").on(table.tradeDate, table.indexName, table.strikePrice, table.optionType),
+]);
 // Stores data from your fetch_data.js (Cash Flows, F&O OI, PCR)
 export const fiiDiiFlows = pgTable("fii_dii_flows", {
     id: serial("id").primaryKey(),
@@ -83,7 +87,9 @@ export const sectorFlows = pgTable("sector_flows", {
     tradeDate: timestamp("trade_date").notNull(),
     sectorName: varchar("sector_name", { length: 100 }).notNull(),
     netInvestmentCr: integer("net_investment_cr").notNull(),
-});
+}, (table) => [
+    unique("sector_flows_unique").on(table.tradeDate, table.sectorName),
+]);
 
 export const tradewiseFlows = pgTable("tradewise_flows", {
     id: serial("id").primaryKey(),
@@ -94,7 +100,9 @@ export const tradewiseFlows = pgTable("tradewise_flows", {
     netValue: real("net_value"),
     instrumentType: varchar("instrument_type", { length: 10 }), // 'EQ', etc.
     createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => [
+    unique("tradewise_flows_unique").on(table.tradeDate, table.isin),
+]);
 
 // 8. VECTOR SIGNALS
 export const vectorSignals = pgTable("vector_signals", {
@@ -112,7 +120,9 @@ export const vectorSignals = pgTable("vector_signals", {
     signal: varchar("signal", { length: 20 }),
     candleVector: jsonb("candle_vector"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => [
+    unique("vector_signals_unique").on(table.symbol, table.timestamp),
+]);
 
 // ============================================================
 // CO-PILOT EXPANSION TABLES

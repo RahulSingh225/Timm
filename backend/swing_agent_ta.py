@@ -1,109 +1,356 @@
+"""
+Swing Agent — Technical Analysis Engine v2.0
+
+Produces structured, actionable analysis for each stock:
+- Multi-indicator scan (EMA, BB, RSI, MACD, ATR)
+- Support / Resistance from pivot points + swing highs/lows
+- Bollinger Band squeeze and reversal detection
+- ATR-based realistic move potential
+- Entry / SL / Target calculation
+- Trend context (daily + weekly if available)
+"""
+
 import pandas as pd
 import pandas_ta as ta
+import numpy as np
 import logging
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - [SWING TA] - %(message)s')
 
-def analyze_swing_setups(df, symbol):
+
+def _calc_pivot_levels(high: float, low: float, close: float) -> dict:
+    """Classic pivot points: P, R1, R2, R3, S1, S2, S3."""
+    pivot = (high + low + close) / 3
+    r1 = (2 * pivot) - low
+    s1 = (2 * pivot) - high
+    r2 = pivot + (high - low)
+    s2 = pivot - (high - low)
+    r3 = high + 2 * (pivot - low)
+    s3 = low - 2 * (high - pivot)
+    return {
+        "pivot": round(pivot, 2),
+        "r1": round(r1, 2), "r2": round(r2, 2), "r3": round(r3, 2),
+        "s1": round(s1, 2), "s2": round(s2, 2), "s3": round(s3, 2),
+    }
+
+
+def _find_swing_sr(df: pd.DataFrame, lookback: int = 20) -> dict:
+    """Find nearest support and resistance from recent swing highs/lows."""
+    recent = df.tail(lookback)
+    highs = recent['high'].values
+    lows = recent['low'].values
+    close = df.iloc[-1]['close']
+
+    # Swing highs: local maxima
+    resistance_levels = []
+    for i in range(1, len(highs) - 1):
+        if highs[i] > highs[i - 1] and highs[i] > highs[i + 1]:
+            resistance_levels.append(round(float(highs[i]), 2))
+
+    # Swing lows: local minima
+    support_levels = []
+    for i in range(1, len(lows) - 1):
+        if lows[i] < lows[i - 1] and lows[i] < lows[i + 1]:
+            support_levels.append(round(float(lows[i]), 2))
+
+    # Find nearest
+    resistance_above = [r for r in resistance_levels if r > close]
+    support_below = [s for s in support_levels if s < close]
+
+    nearest_resistance = min(resistance_above) if resistance_above else None
+    nearest_support = max(support_below) if support_below else None
+
+    return {
+        "nearest_support": nearest_support,
+        "nearest_resistance": nearest_resistance,
+        "support_levels": sorted(set(support_below))[-3:] if support_below else [],
+        "resistance_levels": sorted(set(resistance_above))[:3] if resistance_above else [],
+    }
+
+
+def analyze_swing_setups(df: pd.DataFrame, symbol: str) -> dict | None:
     """
-    Analyzes daily OHLCV data to detect high-probability swing trading setups.
-    Returns a dictionary of active signals formatted for an LLM to digest.
+    Full structural analysis on daily OHLCV data.
+    Returns a rich, structured report for downstream consumers.
     """
     if df is None or df.empty or len(df) < 200:
-        logging.warning(f"Not enough data to calculate structural indicators for {symbol}.")
+        logging.warning(f"Not enough data for {symbol} (need 200+, got {len(df) if df is not None else 0}).")
         return None
 
-    # ==========================================
-    # 1. CALCULATE INDICATORS (Appended to DF)
-    # ==========================================
-    # Trend: 50-day and 200-day Exponential Moving Averages
+    # Normalize column names to lowercase
+    df.columns = [c.lower() for c in df.columns]
+
+    # ──────────────────────────────────────────────────
+    # 1. CALCULATE ALL INDICATORS
+    # ──────────────────────────────────────────────────
+
+    # EMAs
+    df.ta.ema(length=9, append=True)
+    df.ta.ema(length=21, append=True)
     df.ta.ema(length=50, append=True)
     df.ta.ema(length=200, append=True)
-    
-    # Momentum: 14-day RSI
+
+    # RSI
     df.ta.rsi(length=14, append=True)
-    
-    # Trend Reversal: MACD (Fast 12, Slow 26, Signal 9)
+
+    # MACD
     df.ta.macd(append=True)
-    
-    # Volume: 20-day Simple Moving Average of Volume
+
+    # Bollinger Bands (20, 2)
+    df.ta.bbands(length=20, std=2, append=True)
+
+    # ATR (14-day)
+    df.ta.atr(length=14, append=True)
+
+    # Volume SMA
     df['VOL_SMA_20'] = df['volume'].rolling(window=20).mean()
 
-    # Get the last two days of data to check for crossovers and recent momentum
     latest = df.iloc[-1]
     prev = df.iloc[-2]
 
-    # Initialize the report dictionary
-    report = {
+    close = float(latest['close'])
+    signals = []
+
+    # ──────────────────────────────────────────────────
+    # 2. TREND CONTEXT
+    # ──────────────────────────────────────────────────
+    ema9 = latest.get('EMA_9', close)
+    ema21 = latest.get('EMA_21', close)
+    ema50 = latest.get('EMA_50', close)
+    ema200 = latest.get('EMA_200', close)
+
+    if close > ema50 and ema50 > ema200:
+        daily_trend = "BULLISH"
+    elif close < ema50 and ema50 < ema200:
+        daily_trend = "BEARISH"
+    else:
+        daily_trend = "NEUTRAL"
+
+    # Short-term micro-trend from 9/21 EMA
+    if ema9 > ema21:
+        micro_trend = "BULLISH"
+    elif ema9 < ema21:
+        micro_trend = "BEARISH"
+    else:
+        micro_trend = "NEUTRAL"
+
+    # ──────────────────────────────────────────────────
+    # 3. SIGNAL DETECTION
+    # ──────────────────────────────────────────────────
+
+    # A. EMA Crossovers
+    if prev.get('EMA_50', 0) <= prev.get('EMA_200', 0) and ema50 > ema200:
+        signals.append("GOLDEN CROSS: 50 EMA crossed above 200 EMA (Macro Bullish).")
+    elif prev.get('EMA_50', 0) >= prev.get('EMA_200', 0) and ema50 < ema200:
+        signals.append("DEATH CROSS: 50 EMA crossed below 200 EMA (Macro Bearish).")
+
+    # 9/21 EMA cross (fast)
+    if prev.get('EMA_9', 0) <= prev.get('EMA_21', 0) and ema9 > ema21:
+        signals.append("FAST EMA CROSS: 9 EMA crossed above 21 EMA (Short-term Bullish).")
+    elif prev.get('EMA_9', 0) >= prev.get('EMA_21', 0) and ema9 < ema21:
+        signals.append("FAST EMA CROSS: 9 EMA crossed below 21 EMA (Short-term Bearish).")
+
+    # B. EMA Support Bounce
+    if prev['close'] < prev.get('EMA_50', 0) and close > ema50:
+        signals.append("EMA RECLAIM: Price reclaimed 50-day EMA support.")
+
+    # C. RSI
+    rsi = latest.get('RSI_14', 50)
+    prev_rsi = prev.get('RSI_14', 50)
+    if not pd.isna(rsi) and not pd.isna(prev_rsi):
+        if prev_rsi < 30 and rsi >= 30:
+            signals.append(f"RSI BOUNCE: Recovering from oversold (RSI {round(rsi, 1)}).")
+        elif prev_rsi < 40 and rsi >= 40:
+            signals.append(f"RSI MOMENTUM: Crossed above 40 (RSI {round(rsi, 1)}).")
+        elif rsi > 70:
+            signals.append(f"RSI OVERBOUGHT: In high-risk zone (RSI {round(rsi, 1)}).")
+
+    # D. MACD
+    macd_val = latest.get('MACD_12_26_9', 0)
+    signal_val = latest.get('MACDs_12_26_9', 0)
+    prev_macd = prev.get('MACD_12_26_9', 0)
+    prev_signal = prev.get('MACDs_12_26_9', 0)
+
+    if not any(pd.isna(v) for v in [macd_val, signal_val, prev_macd, prev_signal]):
+        if prev_macd <= prev_signal and macd_val > signal_val:
+            if macd_val < 0:
+                signals.append("MACD BULLISH CROSS: Below zero line (Early reversal).")
+            else:
+                signals.append("MACD BULLISH CROSS: Above zero line (Trend continuation).")
+        elif prev_macd >= prev_signal and macd_val < signal_val:
+            signals.append("MACD BEARISH CROSS: Momentum shifting down.")
+
+    # E. Bollinger Band Signals
+    bb_upper = latest.get('BBU_20_2.0', None)
+    bb_lower = latest.get('BBL_20_2.0', None)
+    bb_mid = latest.get('BBM_20_2.0', None)
+    bb_width = latest.get('BBB_20_2.0', None)
+    prev_bb_lower = prev.get('BBL_20_2.0', None)
+
+    if bb_upper and bb_lower and bb_mid:
+        # BB Squeeze: width narrowing
+        if bb_width is not None and not pd.isna(bb_width):
+            bb_width_sma = df['BBB_20_2.0'].rolling(20).mean().iloc[-1] if 'BBB_20_2.0' in df.columns else None
+            if bb_width_sma and not pd.isna(bb_width_sma) and bb_width < bb_width_sma * 0.6:
+                signals.append(f"BB SQUEEZE: Bandwidth is {round(bb_width, 2)} vs avg {round(bb_width_sma, 2)} — breakout imminent.")
+
+        # BB Reversal: touched lower band then closed inside
+        if prev_bb_lower and not pd.isna(prev_bb_lower):
+            if prev['close'] <= prev_bb_lower and close > bb_lower:
+                signals.append(f"BB REVERSAL: Price bounced off lower band ₹{round(bb_lower, 2)} (Mean reversion).")
+
+        # BB Upper breakout
+        if close > bb_upper and not pd.isna(bb_upper):
+            signals.append(f"BB BREAKOUT: Price closed above upper band ₹{round(bb_upper, 2)} (Momentum).")
+
+    # F. Volume
+    vol_sma = latest.get('VOL_SMA_20', 0)
+    if vol_sma and not pd.isna(vol_sma) and vol_sma > 0:
+        vol_ratio = latest['volume'] / vol_sma
+        if vol_ratio >= 2.5:
+            signals.append(f"MASSIVE VOLUME: {round(vol_ratio, 1)}x average ({int(latest['volume']):,} vs avg {int(vol_sma):,}).")
+        elif vol_ratio >= 1.5:
+            signals.append(f"VOLUME SPIKE: {round(vol_ratio, 1)}x average.")
+
+    # ──────────────────────────────────────────────────
+    # 4. SUPPORT / RESISTANCE
+    # ──────────────────────────────────────────────────
+    prev_day_high = float(prev['high'])
+    prev_day_low = float(prev['low'])
+    prev_day_close = float(prev['close'])
+
+    pivots = _calc_pivot_levels(prev_day_high, prev_day_low, prev_day_close)
+    swing_sr = _find_swing_sr(df, lookback=30)
+
+    # ──────────────────────────────────────────────────
+    # 5. MOVE POTENTIAL (ATR-based)
+    # ──────────────────────────────────────────────────
+    atr = latest.get('ATRr_14', None)
+    move_potential_pct = 0.0
+    if atr and not pd.isna(atr) and close > 0:
+        move_potential_pct = round((atr / close) * 100, 2)
+
+    # ──────────────────────────────────────────────────
+    # 6. ENTRY / SL / TARGET (only if signals found)
+    # ──────────────────────────────────────────────────
+    entry = None
+    stoploss = None
+    target = None
+    risk_reward = None
+
+    if signals:
+        bullish_score = sum(1 for s in signals if any(kw in s for kw in ['BULLISH', 'GOLDEN', 'BOUNCE', 'RECLAIM', 'REVERSAL', 'MOMENTUM']))
+        bearish_score = sum(1 for s in signals if any(kw in s for kw in ['BEARISH', 'DEATH', 'OVERBOUGHT']))
+        is_bullish = bullish_score >= bearish_score
+
+        entry = close
+        if atr and not pd.isna(atr):
+            if is_bullish:
+                stoploss = round(close - (1.5 * atr), 2)
+                target = round(close + (2.5 * atr), 2)
+            else:
+                stoploss = round(close + (1.5 * atr), 2)
+                target = round(close - (2.5 * atr), 2)
+
+            sl_dist = abs(close - stoploss)
+            tgt_dist = abs(target - close)
+            risk_reward = round(tgt_dist / sl_dist, 2) if sl_dist > 0 else 0
+
+    # ──────────────────────────────────────────────────
+    # 7. CONFIDENCE SCORE
+    # ──────────────────────────────────────────────────
+    confidence = 0
+    if signals:
+        confidence = min(len(signals) * 15, 60)  # Base: 15 per signal, cap 60
+        if daily_trend == micro_trend and daily_trend != "NEUTRAL":
+            confidence += 20  # Trend alignment bonus
+        if move_potential_pct >= 2.0:
+            confidence += 10  # High ATR = high opportunity
+        if vol_sma and not pd.isna(vol_sma) and vol_sma > 0 and latest['volume'] / vol_sma >= 1.5:
+            confidence += 10  # Volume confirmation
+        confidence = min(confidence, 100)
+
+    # Signal type
+    bullish_count = sum(1 for s in signals if any(kw in s for kw in ['BULLISH', 'GOLDEN', 'BOUNCE', 'RECLAIM', 'REVERSAL', 'MOMENTUM', 'BREAKOUT']))
+    bearish_count = sum(1 for s in signals if any(kw in s for kw in ['BEARISH', 'DEATH', 'OVERBOUGHT']))
+    if bullish_count > bearish_count:
+        signal_type = "BULLISH"
+    elif bearish_count > bullish_count:
+        signal_type = "BEARISH"
+    else:
+        signal_type = "NEUTRAL"
+
+    # Only return if we have signals or extreme conditions
+    if not signals:
+        return None
+
+    return {
         "symbol": symbol,
-        "date": str(latest.name.date()),
-        "close_price": round(latest['close'], 2),
-        "signals": [],
-        "trend_context": "",
-        "volume_context": ""
+        "date": str(latest.name.date()) if hasattr(latest.name, 'date') else str(latest.name),
+        "close_price": round(close, 2),
+        "trend": {
+            "daily": daily_trend,
+            "micro": micro_trend,
+            "alignment": "STRONG" if daily_trend == micro_trend and daily_trend != "NEUTRAL" else "WEAK" if daily_trend != micro_trend else "FLAT",
+        },
+        "support_resistance": {
+            **swing_sr,
+            **pivots,
+        },
+        "bollinger": {
+            "upper": round(bb_upper, 2) if bb_upper and not pd.isna(bb_upper) else None,
+            "mid": round(bb_mid, 2) if bb_mid and not pd.isna(bb_mid) else None,
+            "lower": round(bb_lower, 2) if bb_lower and not pd.isna(bb_lower) else None,
+        },
+        "indicators": {
+            "rsi": round(rsi, 2) if not pd.isna(rsi) else None,
+            "macd": round(macd_val, 4) if not pd.isna(macd_val) else None,
+            "atr": round(atr, 2) if atr and not pd.isna(atr) else None,
+            "ema9": round(ema9, 2) if not pd.isna(ema9) else None,
+            "ema21": round(ema21, 2) if not pd.isna(ema21) else None,
+            "ema50": round(ema50, 2) if not pd.isna(ema50) else None,
+            "ema200": round(ema200, 2) if not pd.isna(ema200) else None,
+        },
+        "signals": signals,
+        "signal_type": signal_type,
+        "move_potential_pct": move_potential_pct,
+        "trade_idea": {
+            "direction": signal_type,
+            "entry": entry,
+            "stoploss": stoploss,
+            "target": target,
+            "risk_reward": risk_reward,
+        } if entry else None,
+        "confidence": confidence,
     }
 
-    # ==========================================
-    # 2. SCAN FOR SPECIFIC ACTIONABLE SETUPS
-    # ==========================================
 
-    # A. The Golden / Death Cross
-    if prev['EMA_50'] <= prev['EMA_200'] and latest['EMA_50'] > latest['EMA_200']:
-        report["signals"].append("GOLDEN CROSS: 50 EMA crossed above 200 EMA (Macro Bullish).")
-    elif prev['EMA_50'] >= prev['EMA_200'] and latest['EMA_50'] < latest['EMA_200']:
-        report["signals"].append("DEATH CROSS: 50 EMA crossed below 200 EMA (Macro Bearish).")
-
-    # B. EMA Support Bounce (Pullback Strategy)
-    # Price dips below 50 EMA but closes above it, indicating buyers stepped in
-    if prev['close'] < prev['EMA_50'] and latest['close'] > latest['EMA_50']:
-        report["signals"].append("EMA RECLAIM: Price reclaimed the 50-day EMA support.")
-    
-    # C. RSI Divergence / Extremes
-    if prev['RSI_14'] < 30 and latest['RSI_14'] >= 30:
-        report["signals"].append("RSI BOUNCE: Momentum recovering from deep oversold territory (<30).")
-    elif latest['RSI_14'] > 70:
-        report["signals"].append("RSI OVERBOUGHT: Trading in high-risk overbought zone (>70).")
-
-    # D. MACD Bullish / Bearish Crossover
-    # MACD line crosses above the Signal line
-    macd_line = latest['MACD_12_26_9']
-    signal_line = latest['MACDs_12_26_9']
-    prev_macd = prev['MACD_12_26_9']
-    prev_signal = prev['MACDs_12_26_9']
-    
-    if prev_macd <= prev_signal and macd_line > signal_line and macd_line < 0:
-        report["signals"].append("MACD CROSS: Bullish crossover below the zero line (Early Reversal).")
-
-    # E. Volume Breakout
-    if latest['volume'] > (latest['VOL_SMA_20'] * 2.5):
-        report["volume_context"] = "MASSIVE VOLUME SPIKE: Volume is > 2.5x the 20-day average."
-
-    # ==========================================
-    # 3. DEFINE BROADER CONTEXT FOR THE LLM
-    # ==========================================
-    if latest['close'] > latest['EMA_50'] and latest['EMA_50'] > latest['EMA_200']:
-        report["trend_context"] = "Strong Uptrend (Price > 50 EMA > 200 EMA)"
-    elif latest['close'] < latest['EMA_50'] and latest['EMA_50'] < latest['EMA_200']:
-        report["trend_context"] = "Strong Downtrend (Price < 50 EMA < 200 EMA)"
-    else:
-        report["trend_context"] = "Consolidating / Range-bound"
-
-    # Only return the report if there's actually a signal or extreme volume to act on
-    if report["signals"] or "SPIKE" in report["volume_context"]:
-        return report
-    
-    return None
-
-# ==========================================
-# Testing the Logic
-# ==========================================
+# ──────────────────────────────────────────────────
+# DRY RUN MODE
+# ──────────────────────────────────────────────────
 if __name__ == "__main__":
-    # Assuming `df_swing` is the DataFrame fetched from the previous script
-    # For testing, you would pass the df returned from `fetch_swing_data`
-    
-    # Example usage:
-    # report = analyze_swing_setups(df_swing, "RELIANCE")
-    # if report:
-    #     import json
-    #     print(json.dumps(report, indent=4))
-    pass
+    import sys
+    import json
+    import yfinance as yf
+
+    symbol = sys.argv[1] if len(sys.argv) > 1 else "RELIANCE"
+    yf_symbol = f"{symbol}.NS"
+
+    logging.info(f"Fetching daily data for {yf_symbol}...")
+    ticker = yf.Ticker(yf_symbol)
+    df = ticker.history(period="1y", interval="1d")
+
+    if df.empty:
+        logging.error(f"No data for {yf_symbol}")
+        sys.exit(1)
+
+    report = analyze_swing_setups(df, symbol)
+
+    if report:
+        print(f"\n{'='*60}")
+        print(f"📊 SWING ANALYSIS: {symbol}")
+        print(f"{'='*60}")
+        print(json.dumps(report, indent=2, default=str))
+        print(f"{'='*60}\n")
+    else:
+        print(f"No actionable setups for {symbol}.")

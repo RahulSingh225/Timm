@@ -6,7 +6,8 @@ import {
   Database, RefreshCw, Clock, PlayCircle, Server,
   Wifi, WifiOff, Brain, Shield, ChevronDown, ChevronUp,
   MessageSquare, CheckCircle2, XCircle, Loader2, Gauge,
-  Rabbit, HardDrive, Cpu, CalendarClock, Timer, Play, Pause
+  Rabbit, HardDrive, Cpu, CalendarClock, Timer, Play, Pause,
+  Plus, Trash2, Eye, EyeOff, Search, Target, ArrowUpRight, ArrowDownRight, ListFilter
 } from 'lucide-react';
 
 // ─── Types ──────────────────────────────────────────
@@ -89,6 +90,31 @@ interface SchedulerJob {
     error: string | null;
   } | null;
   is_paused: boolean;
+}
+
+interface WatchlistItem {
+  id: number;
+  symbol: string;
+  assetType: string;
+  isActive: boolean;
+  addedAt: string;
+}
+
+interface ScreenedStock {
+  id: number;
+  symbol: string;
+  screenedAt: string;
+  timeframe: string;
+  tradeType: string;
+  setupType: string;
+  entryPrice: number | null;
+  targetPrice: number | null;
+  stoplossPrice: number | null;
+  targetPct: number | null;
+  riskPct: number | null;
+  confidence: number | null;
+  signals: string[];
+  status: string;
 }
 
 // ─── SSE Hook with Auto-Reconnect ──────────────────
@@ -196,6 +222,12 @@ export default function CommandCenter() {
   const [triggeringJob, setTriggeringJob] = useState<string | null>(null);
   const [expandedJob, setExpandedJob] = useState<string | null>(null);
 
+  // Watchlist & Screener state
+  const [watchlistItems, setWatchlistItems] = useState<WatchlistItem[]>([]);
+  const [newSymbol, setNewSymbol] = useState('');
+  const [screenedStocks, setScreenedStocks] = useState<ScreenedStock[]>([]);
+  const [showScreener, setShowScreener] = useState(true);
+
   // SSE with auto-reconnect
   const handleAlert = useCallback((newAlert: TradeAlert) => {
     setAlerts((prev) => [newAlert, ...prev].slice(0, 50));
@@ -272,6 +304,59 @@ export default function CommandCenter() {
     }
   };
 
+  // ─── Watchlist Fetchers ──────────────────────────
+  const fetchWatchlist = async () => {
+    try {
+      const res = await fetch('/api/watchlist');
+      const json = await res.json();
+      if (json.success) setWatchlistItems(json.data);
+    } catch {}
+  };
+
+  const addToWatchlist = async () => {
+    const sym = newSymbol.trim().toUpperCase();
+    if (!sym) return;
+    try {
+      await fetch('/api/watchlist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ symbol: sym, asset_type: 'EQUITY' }),
+      });
+      setNewSymbol('');
+      fetchWatchlist();
+    } catch {}
+  };
+
+  const toggleWatchlistItem = async (id: number, currentActive: boolean) => {
+    try {
+      await fetch('/api/watchlist', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, is_active: !currentActive }),
+      });
+      fetchWatchlist();
+    } catch {}
+  };
+
+  const removeFromWatchlist = async (id: number) => {
+    try {
+      await fetch('/api/watchlist', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      });
+      fetchWatchlist();
+    } catch {}
+  };
+
+  const fetchScreenedStocks = async () => {
+    try {
+      const res = await fetch('/api/screener/results?limit=20');
+      const json = await res.json();
+      if (json.success) setScreenedStocks(json.data);
+    } catch {}
+  };
+
   useEffect(() => {
     fetchWorkers();
     fetchGlobalCues();
@@ -279,12 +364,15 @@ export default function CommandCenter() {
     fetchHealth();
     fetchAgentRuns();
     fetchScheduler();
+    fetchWatchlist();
+    fetchScreenedStocks();
 
     const workerInterval = setInterval(fetchWorkers, 5000);
     const pipelineInterval = setInterval(fetchPipelines, 30000);
     const healthInterval = setInterval(fetchHealth, 15000);
     const agentInterval = setInterval(fetchAgentRuns, 10000);
     const schedulerInterval = setInterval(fetchScheduler, 10000);
+    const screenerInterval = setInterval(fetchScreenedStocks, 30000);
 
     return () => {
       clearInterval(workerInterval);
@@ -292,6 +380,7 @@ export default function CommandCenter() {
       clearInterval(healthInterval);
       clearInterval(agentInterval);
       clearInterval(schedulerInterval);
+      clearInterval(screenerInterval);
     };
   }, []);
 
@@ -672,6 +761,115 @@ export default function CommandCenter() {
         </div>
       )}
 
+      {/* ═══════════ VISUAL SCREENER ═══════════ */}
+      <div className="mb-6">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm text-neutral-400 uppercase tracking-wider flex items-center gap-2">
+            <Target size={16} className="text-pink-400" /> Visual Screener
+            {screenedStocks.length > 0 && (
+              <span className="bg-pink-500/10 text-pink-400 text-[10px] px-1.5 py-0.5 rounded border border-pink-500/20">
+                {screenedStocks.length} results
+              </span>
+            )}
+          </h2>
+          <button
+            onClick={() => setShowScreener(!showScreener)}
+            className="text-xs text-neutral-500 hover:text-neutral-300 flex items-center gap-1"
+          >
+            {showScreener ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            {showScreener ? 'Collapse' : 'Expand'}
+          </button>
+        </div>
+
+        {showScreener && (
+          screenedStocks.length === 0 ? (
+            <div className="border border-dashed border-neutral-800 rounded-lg p-8 flex flex-col items-center justify-center text-neutral-500">
+              <Search size={24} className="mb-2 opacity-50" />
+              <p className="text-xs">No screened stocks yet. Run the data pipeline to generate results.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {screenedStocks.map((stock) => {
+                const isBullish = !stock.setupType.includes('BEARISH') && !stock.setupType.includes('GAP_DOWN');
+                const dirColor = isBullish ? 'text-emerald-400' : 'text-red-400';
+                const dirBg = isBullish ? 'bg-emerald-500/5 border-emerald-500/20' : 'bg-red-500/5 border-red-500/20';
+
+                return (
+                  <div
+                    key={stock.id}
+                    className={`border rounded-lg p-3 transition-all hover:border-neutral-600 ${dirBg}`}
+                  >
+                    {/* Header */}
+                    <div className="flex items-start justify-between mb-2">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-base font-bold text-white">{stock.symbol}</h3>
+                          {isBullish ? (
+                            <ArrowUpRight size={14} className="text-emerald-400" />
+                          ) : (
+                            <ArrowDownRight size={14} className="text-red-400" />
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-neutral-800 text-neutral-400 border border-neutral-700">
+                            {stock.tradeType}
+                          </span>
+                          <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-neutral-800 text-neutral-400 border border-neutral-700">
+                            {stock.setupType.replace(/_/g, ' ')}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Confidence */}
+                      <div className="text-right">
+                        <div className={`text-lg font-bold ${stock.confidence && stock.confidence >= 70 ? 'text-emerald-400' : stock.confidence && stock.confidence >= 50 ? 'text-yellow-400' : 'text-neutral-400'}`}>
+                          {stock.confidence || 0}%
+                        </div>
+                        <div className="text-[9px] text-neutral-500 uppercase">Confidence</div>
+                      </div>
+                    </div>
+
+                    {/* Trade Levels */}
+                    {stock.entryPrice && (
+                      <div className="grid grid-cols-3 gap-2 mt-2 pt-2 border-t border-neutral-800/50">
+                        <div>
+                          <div className="text-[9px] text-neutral-500 uppercase">Entry</div>
+                          <div className="text-sm font-mono text-neutral-200">₹{stock.entryPrice?.toFixed(1)}</div>
+                        </div>
+                        <div>
+                          <div className="text-[9px] text-neutral-500 uppercase">Target</div>
+                          <div className="text-sm font-mono text-emerald-400">₹{stock.targetPrice?.toFixed(1)}</div>
+                        </div>
+                        <div>
+                          <div className="text-[9px] text-neutral-500 uppercase">Stoploss</div>
+                          <div className="text-sm font-mono text-red-400">₹{stock.stoplossPrice?.toFixed(1)}</div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Signals */}
+                    <div className="mt-2 pt-2 border-t border-neutral-800/50 space-y-1">
+                      {(stock.signals || []).slice(0, 3).map((sig, i) => (
+                        <p key={i} className="text-[10px] text-neutral-400 flex items-start gap-1">
+                          <CheckCircle2 size={10} className={`shrink-0 mt-0.5 ${dirColor}`} />
+                          {typeof sig === 'string' ? sig : (sig as any)?.signal || JSON.stringify(sig)}
+                        </p>
+                      ))}
+                    </div>
+
+                    {/* Footer */}
+                    <div className="flex items-center justify-between mt-2 text-[9px] text-neutral-600">
+                      <span>{stock.timeframe}</span>
+                      <span>{timeAgo(stock.screenedAt)}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )
+        )}
+      </div>
+
       {/* ═══════════ MAIN GRID ═══════════ */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         {/* ─── Left: Live Alerts + Agent Runs ─── */}
@@ -904,6 +1102,73 @@ export default function CommandCenter() {
 
         {/* ─── Right Sidebar ─── */}
         <div className="space-y-6">
+          {/* System Overrides */}
+          <div className="bg-neutral-900 border border-neutral-800 rounded-lg p-4">
+            <h2 className="text-sm text-neutral-400 uppercase tracking-wider mb-4 border-b border-neutral-800 pb-2 flex items-center gap-2">
+              <ListFilter size={16} className="text-teal-400" /> Watchlist
+              <span className="text-[10px] text-neutral-500 ml-auto">
+                {watchlistItems.filter(w => w.isActive).length}/{watchlistItems.length} active
+              </span>
+            </h2>
+
+            {/* Add symbol */}
+            <div className="flex gap-1 mb-3">
+              <input
+                type="text"
+                value={newSymbol}
+                onChange={(e) => setNewSymbol(e.target.value.toUpperCase())}
+                onKeyDown={(e) => e.key === 'Enter' && addToWatchlist()}
+                placeholder="Add symbol..."
+                className="flex-1 bg-neutral-950 border border-neutral-800 rounded px-2 py-1.5 text-xs text-neutral-200 placeholder:text-neutral-600 focus:outline-none focus:border-purple-500/50"
+              />
+              <button
+                onClick={addToWatchlist}
+                className="px-2 py-1.5 bg-purple-500/10 border border-purple-500/30 rounded text-purple-400 hover:bg-purple-500/20 transition-colors"
+              >
+                <Plus size={14} />
+              </button>
+            </div>
+
+            {/* Watchlist items */}
+            <div className="space-y-1 max-h-48 overflow-y-auto">
+              {watchlistItems.map((item) => (
+                <div
+                  key={item.id}
+                  className={`flex items-center justify-between text-xs p-1.5 rounded transition-colors ${
+                    item.isActive ? 'hover:bg-neutral-800/50' : 'opacity-40'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <StatusDot status={item.isActive ? 'healthy' : 'empty'} />
+                    <span className="text-neutral-300 font-medium truncate">{item.symbol}</span>
+                    <span className="text-[9px] text-neutral-600">{item.assetType}</span>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      onClick={() => toggleWatchlistItem(item.id, item.isActive)}
+                      className="p-1 hover:bg-neutral-700 rounded transition-colors text-neutral-500 hover:text-neutral-300"
+                      title={item.isActive ? 'Deactivate' : 'Activate'}
+                    >
+                      {item.isActive ? <Eye size={12} /> : <EyeOff size={12} />}
+                    </button>
+                    <button
+                      onClick={() => removeFromWatchlist(item.id)}
+                      className="p-1 hover:bg-red-900/30 rounded transition-colors text-neutral-600 hover:text-red-400"
+                      title="Remove"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {watchlistItems.length === 0 && (
+                <p className="text-[10px] text-neutral-600 text-center py-3">
+                  No symbols in watchlist. Add one above.
+                </p>
+              )}
+            </div>
+          </div>
+
           {/* System Overrides */}
           <div className="bg-neutral-900 border border-neutral-800 rounded-lg p-4">
             <h2 className="text-sm text-neutral-400 uppercase tracking-wider mb-4 border-b border-neutral-800 pb-2 flex items-center gap-2">

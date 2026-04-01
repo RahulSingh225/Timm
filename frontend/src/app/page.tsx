@@ -7,7 +7,8 @@ import {
   Wifi, WifiOff, Brain, Shield, ChevronDown, ChevronUp,
   MessageSquare, CheckCircle2, XCircle, Loader2, Gauge,
   Rabbit, HardDrive, Cpu, CalendarClock, Timer, Play, Pause,
-  Plus, Trash2, Eye, EyeOff, Search, Target, ArrowUpRight, ArrowDownRight, ListFilter
+  Plus, Trash2, Eye, EyeOff, Search, Target, ArrowUpRight, ArrowDownRight, ListFilter,
+  Sparkles, FileText
 } from 'lucide-react';
 
 // ─── Types ──────────────────────────────────────────
@@ -79,7 +80,7 @@ interface SchedulerJob {
   id: string;
   description: string;
   script: string;
-  category: 'scraper' | 'producer';
+  category: 'scraper' | 'producer' | 'agent';
   cron: Record<string, string>;
   cron_human: string;
   next_run_time: string | null;
@@ -115,6 +116,22 @@ interface ScreenedStock {
   confidence: number | null;
   signals: string[];
   status: string;
+}
+
+interface DailyReport {
+  id: number;
+  reportDate: string;
+  marketRegime: string | null;
+  vix: number | null;
+  fiiNet: string | null;
+  diiNet: string | null;
+  watchlistAnalysis: any[];
+  topPicks: string[] | null;
+  avoidList: string[] | null;
+  headAnalystBrief: string | null;
+  totalStocksAnalyzed: number | null;
+  totalSignals: number | null;
+  generatedAt: string;
 }
 
 // ─── SSE Hook with Auto-Reconnect ──────────────────
@@ -227,6 +244,22 @@ export default function CommandCenter() {
   const [newSymbol, setNewSymbol] = useState('');
   const [screenedStocks, setScreenedStocks] = useState<ScreenedStock[]>([]);
   const [showScreener, setShowScreener] = useState(true);
+  const [dailyReport, setDailyReport] = useState<DailyReport | null>(null);
+  const [schedulerOnline, setSchedulerOnline] = useState(false);
+
+  // Static fallback registry — always show these even if scheduler worker is offline
+  const KNOWN_JOBS: SchedulerJob[] = [
+    { id: 'yfinance_eod', description: 'YFinance EOD + Intraday Data', script: 'yfinance_producer.py', category: 'producer', cron: {}, cron_human: 'Mon\u2013Fri 16:00', next_run_time: null, last_run: null, is_paused: false },
+    { id: 'nse_flows', description: 'NSE FII/DII Cash Flows', script: 'nse_flows_scraper.py', category: 'scraper', cron: {}, cron_human: 'Mon\u2013Fri 18:30', next_run_time: null, last_run: null, is_paused: false },
+    { id: 'nse_participants', description: 'NSE Participant OI Data', script: 'nse_participant_scraper.py', category: 'scraper', cron: {}, cron_human: 'Mon\u2013Fri 18:30', next_run_time: null, last_run: null, is_paused: false },
+    { id: 'nsdl_sectors', description: 'NSDL Fortnightly Sector Flows', script: 'nsdl_sector_scraper.py', category: 'scraper', cron: {}, cron_human: 'Day 1,16 at 9:00', next_run_time: null, last_run: null, is_paused: false },
+    { id: 'nsdl_tradewise', description: 'NSDL Monthly Trade-wise Flows', script: 'nsdl_tradewise_scraper.py', category: 'scraper', cron: {}, cron_human: 'Day 5 at 9:00', next_run_time: null, last_run: null, is_paused: false },
+    { id: 'option_footprint', description: 'NSE Options Footprint', script: 'option_footprint_producer.py', category: 'scraper', cron: {}, cron_human: 'Mon\u2013Fri 17:00', next_run_time: null, last_run: null, is_paused: false },
+    { id: 'news_scraper', description: 'Macro News (RSS Feeds)', script: 'news_scraper_producer.py', category: 'scraper', cron: {}, cron_human: 'Mon\u2013Fri 9\u201318 half-hourly', next_run_time: null, last_run: null, is_paused: false },
+    { id: 'global_cues', description: 'US Markets & VIX Global Cues', script: 'global_cues_producer.py', category: 'producer', cron: {}, cron_human: '8:30 & 13:30', next_run_time: null, last_run: null, is_paused: false },
+    { id: 'yfinance_backfill', description: 'Historical Backfill (since 2020)', script: 'yfinance_producer.py', category: 'producer', cron: {}, cron_human: 'Day 1 at 6:00', next_run_time: null, last_run: null, is_paused: false },
+    { id: 'daily_report', description: 'Daily Intelligence Report', script: 'daily_report_generator.py', category: 'agent', cron: {}, cron_human: 'Mon\u2013Fri 16:30', next_run_time: null, last_run: null, is_paused: false },
+  ];
 
   // SSE with auto-reconnect
   const handleAlert = useCallback((newAlert: TradeAlert) => {
@@ -283,8 +316,22 @@ export default function CommandCenter() {
     try {
       const res = await fetch('/api/system/scheduler');
       const json = await res.json();
-      if (json.jobs) setSchedulerJobs(json.jobs);
-    } catch {}
+      if (json.jobs && json.jobs.length > 0) {
+        setSchedulerJobs(json.jobs);
+        setSchedulerOnline(true);
+      } else {
+        // Scheduler offline — use static fallback so UI is still visible
+        if (schedulerJobs.length === 0) {
+          setSchedulerJobs(KNOWN_JOBS);
+        }
+        setSchedulerOnline(false);
+      }
+    } catch {
+      if (schedulerJobs.length === 0) {
+        setSchedulerJobs(KNOWN_JOBS);
+      }
+      setSchedulerOnline(false);
+    }
   };
 
   const triggerSchedulerJob = async (jobId: string) => {
@@ -357,6 +404,14 @@ export default function CommandCenter() {
     } catch {}
   };
 
+  const fetchDailyReport = async () => {
+    try {
+      const res = await fetch('/api/system/daily-report');
+      const json = await res.json();
+      if (json.success && json.data) setDailyReport(json.data);
+    } catch {}
+  };
+
   useEffect(() => {
     fetchWorkers();
     fetchGlobalCues();
@@ -366,6 +421,7 @@ export default function CommandCenter() {
     fetchScheduler();
     fetchWatchlist();
     fetchScreenedStocks();
+    fetchDailyReport();
 
     const workerInterval = setInterval(fetchWorkers, 5000);
     const pipelineInterval = setInterval(fetchPipelines, 30000);
@@ -590,14 +646,19 @@ export default function CommandCenter() {
       </div>
 
       {/* ═══════════ SCHEDULER TIMELINE ═══════════ */}
-      {schedulerJobs.length > 0 && (
-        <div className="mb-6">
-          <h2 className="text-sm text-neutral-400 uppercase tracking-wider mb-3 flex items-center gap-2">
-            <CalendarClock size={16} className="text-cyan-400" /> Automated Scheduler
-            <span className="bg-cyan-500/10 text-cyan-400 text-[10px] px-1.5 py-0.5 rounded border border-cyan-500/20">
-              {schedulerJobs.length} jobs
+      <div className="mb-6">
+        <h2 className="text-sm text-neutral-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+          <CalendarClock size={16} className="text-cyan-400" /> Automated Scheduler
+          <span className="bg-cyan-500/10 text-cyan-400 text-[10px] px-1.5 py-0.5 rounded border border-cyan-500/20">
+            {schedulerJobs.length} jobs
+          </span>
+          {!schedulerOnline && (
+            <span className="bg-yellow-500/10 text-yellow-400 text-[10px] px-1.5 py-0.5 rounded border border-yellow-500/20 flex items-center gap-1">
+              <WifiOff size={10} /> Scheduler Offline
             </span>
-          </h2>
+          )}
+        </h2>
+        {schedulerJobs.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             {schedulerJobs.map((job) => {
               const isTriggering = triggeringJob === job.id;
@@ -720,8 +781,13 @@ export default function CommandCenter() {
               );
             })}
           </div>
-        </div>
-      )}
+        ) : (
+          <div className="border border-dashed border-neutral-800 rounded-lg p-8 flex flex-col items-center justify-center text-neutral-500">
+            <CalendarClock size={24} className="mb-2 opacity-50" />
+            <p className="text-xs">No scheduler data. Start the scheduler worker on port 4501.</p>
+          </div>
+        )}
+      </div>
 
       {/* ═══════════ RABBITMQ QUEUE DEPTH ═══════════ */}
       {health?.rabbitmq?.status === 'connected' && health.rabbitmq.queues.length > 0 && (
@@ -757,6 +823,111 @@ export default function CommandCenter() {
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════ DAILY INTELLIGENCE ═══════════ */}
+      {dailyReport && (
+        <div className="mb-6">
+          <h2 className="text-sm text-neutral-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+            <Sparkles size={16} className="text-yellow-400" /> Daily Intelligence
+            <span className="text-[10px] text-neutral-500">
+              {dailyReport.reportDate}
+            </span>
+          </h2>
+
+          {/* Top row: regime + metrics */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+            <div className="bg-neutral-900/50 border border-neutral-800 rounded-lg p-3">
+              <div className="text-[9px] text-neutral-500 uppercase mb-1">Market Regime</div>
+              <div className={`text-sm font-bold ${dailyReport.marketRegime === 'RISK_ON' ? 'text-emerald-400' : dailyReport.marketRegime === 'RISK_OFF' ? 'text-red-400' : 'text-neutral-400'}`}>
+                {dailyReport.marketRegime || 'NEUTRAL'}
+              </div>
+            </div>
+            <div className="bg-neutral-900/50 border border-neutral-800 rounded-lg p-3">
+              <div className="text-[9px] text-neutral-500 uppercase mb-1">VIX</div>
+              <div className={`text-sm font-bold ${(dailyReport.vix || 0) > 20 ? 'text-red-400' : 'text-emerald-400'}`}>
+                {dailyReport.vix?.toFixed(1) || '—'}
+              </div>
+            </div>
+            <div className="bg-neutral-900/50 border border-neutral-800 rounded-lg p-3">
+              <div className="text-[9px] text-neutral-500 uppercase mb-1">FII Net</div>
+              <div className={`text-sm font-bold ${dailyReport.fiiNet?.startsWith('+') ? 'text-emerald-400' : dailyReport.fiiNet?.startsWith('-') ? 'text-red-400' : 'text-neutral-400'}`}>
+                {dailyReport.fiiNet || '—'}
+              </div>
+            </div>
+            <div className="bg-neutral-900/50 border border-neutral-800 rounded-lg p-3">
+              <div className="text-[9px] text-neutral-500 uppercase mb-1">Signals</div>
+              <div className="text-sm font-bold text-purple-400">
+                {dailyReport.totalSignals || 0} across {dailyReport.totalStocksAnalyzed || 0} stocks
+              </div>
+            </div>
+          </div>
+
+          {/* Morning Brief */}
+          {dailyReport.headAnalystBrief && (
+            <div className="bg-neutral-900/50 border border-yellow-500/20 rounded-lg p-4 mb-3">
+              <div className="flex items-center gap-2 mb-2">
+                <FileText size={14} className="text-yellow-400" />
+                <span className="text-xs text-yellow-400 font-bold uppercase">Morning Brief</span>
+              </div>
+              <p className="text-sm text-neutral-300 leading-relaxed whitespace-pre-line">
+                {dailyReport.headAnalystBrief}
+              </p>
+            </div>
+          )}
+
+          {/* Top Picks + Avoid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {dailyReport.topPicks && (dailyReport.topPicks as string[]).length > 0 && (
+              <div className="bg-neutral-900/50 border border-emerald-500/20 rounded-lg p-3">
+                <div className="text-[9px] text-emerald-400 uppercase font-bold mb-2">Top Picks</div>
+                <div className="space-y-1.5">
+                  {(dailyReport.topPicks as string[]).map((sym: string) => {
+                    const analysis = (dailyReport.watchlistAnalysis as any[])?.find((a: any) => a.symbol === sym);
+                    return (
+                      <div key={sym} className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <ArrowUpRight size={12} className="text-emerald-400" />
+                          <span className="text-sm font-medium text-white">{sym}</span>
+                          {analysis?.signal_type && (
+                            <span className={`text-[9px] px-1.5 py-0.5 rounded ${analysis.signal_type === 'BULLISH' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
+                              {analysis.signal_type}
+                            </span>
+                          )}
+                        </div>
+                        {analysis?.confidence != null && (
+                          <div className="flex items-center gap-2">
+                            <div className="w-16 h-1.5 bg-neutral-800 rounded-full overflow-hidden">
+                              <div
+                                className={`h-full rounded-full ${analysis.confidence >= 70 ? 'bg-emerald-400' : analysis.confidence >= 50 ? 'bg-yellow-400' : 'bg-neutral-500'}`}
+                                style={{ width: `${Math.min(analysis.confidence, 100)}%` }}
+                              />
+                            </div>
+                            <span className="text-[10px] text-neutral-400 w-8 text-right">{analysis.confidence}%</span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {dailyReport.avoidList && (dailyReport.avoidList as string[]).length > 0 && (
+              <div className="bg-neutral-900/50 border border-red-500/20 rounded-lg p-3">
+                <div className="text-[9px] text-red-400 uppercase font-bold mb-2">Avoid List</div>
+                <div className="space-y-1.5">
+                  {(dailyReport.avoidList as string[]).map((sym: string) => (
+                    <div key={sym} className="flex items-center gap-2">
+                      <XCircle size={12} className="text-red-400" />
+                      <span className="text-sm text-neutral-400">{sym}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

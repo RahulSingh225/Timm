@@ -100,6 +100,19 @@ services:
   #   env_file:
   #     - .env
 
+  # SCHEDULER (APScheduler Cron Manager)
+  scheduler_worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: scheduler_worker
+    restart: always
+    command: ["python", "scheduler_worker.py"]
+    ports:
+      - "4501:4501"
+    env_file:
+      - .env
+
   backend:
     build:
       context: ./backend
@@ -108,6 +121,8 @@ services:
     restart: always
     ports:
       - "4500:4500"
+    environment:
+      - SCHEDULER_URL=http://scheduler_worker:4501
     # depends_on:
     #   - rabbitmq
     env_file:

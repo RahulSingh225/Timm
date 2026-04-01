@@ -18,4 +18,6 @@ uvicorn
 boto3
 numpy
 scipy
+apscheduler
+httpx
 schedule

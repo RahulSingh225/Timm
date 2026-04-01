@@ -21,8 +21,11 @@ workers_registry = {
     "vector": "candle_vector_agent.py",
     "screener": "screener_agent_worker.py",
     "cues": "global_cues_producer.py",
-    "monitor": "price_monitor_worker.py"
+    "monitor": "price_monitor_worker.py",
+    "scheduler": "scheduler_worker.py"
 }
+
+SCHEDULER_URL = os.getenv("SCHEDULER_URL", "http://localhost:4501")
 
 active_processes = {} # {id: subprocess.Popen}
 
@@ -158,6 +161,27 @@ def run_ingestion(background_tasks: BackgroundTasks):
 
     background_tasks.add_task(run_yfinance)
     return {"message": "Data ingestion initiated in the background."}
+
+# ─── Scheduler Proxy Endpoints ─────────────────────────────
+@app.get("/scheduler")
+def get_scheduler_status():
+    """Proxy to the scheduler worker's status endpoint."""
+    import httpx
+    try:
+        r = httpx.get(f"{SCHEDULER_URL}/scheduler", timeout=5.0)
+        return r.json()
+    except Exception as e:
+        return {"success": False, "error": f"Scheduler unreachable: {e}", "jobs": []}
+
+@app.post("/scheduler/trigger/{job_id}")
+def trigger_scheduler_job(job_id: str):
+    """Proxy to trigger a specific scheduler job."""
+    import httpx
+    try:
+        r = httpx.post(f"{SCHEDULER_URL}/scheduler/trigger/{job_id}", timeout=5.0)
+        return r.json()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Scheduler unreachable: {e}")
 
 if __name__ == "__main__":
     logging.info("Starting Web Server. Access the API at http://localhost:4500")

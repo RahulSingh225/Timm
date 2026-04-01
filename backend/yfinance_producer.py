@@ -3,6 +3,7 @@ import pika
 import psycopg2
 import json
 import logging
+import sys
 from datetime import datetime
 import os
 from dotenv import load_dotenv
@@ -11,6 +12,10 @@ load_dotenv()
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# Backfill mode flag
+BACKFILL_MODE = '--backfill' in sys.argv if 'sys' in dir() else False
+BACKFILL_START = '2020-01-01'
 
 # RabbitMQ Configuration
 RABBITMQ_HOST = os.getenv('RABBITMQ_HOST', 'localhost')
@@ -62,18 +67,23 @@ def setup_rabbitmq():
         logging.error(f"Failed to connect to RabbitMQ: {e}")
         return None, None
 
-def fetch_and_publish_eod_data(channel, symbol):
-    """Fetches 1 year of daily data from yfinance and publishes it to the queue."""
+def fetch_and_publish_eod_data(channel, symbol, backfill=False):
+    """Fetches daily data from yfinance and publishes it to the queue."""
     # Note: Yahoo Finance uses '.NS' suffix for NSE stocks
     yf_symbol = f"{symbol}.NS"
     routing_key = f"market.eod.{symbol}"
     
-    logging.info(f"Fetching data for {yf_symbol}...")
+    if backfill:
+        logging.info(f"Fetching FULL HISTORY for {yf_symbol} since {BACKFILL_START}...")
+    else:
+        logging.info(f"Fetching data for {yf_symbol}...")
     
     try:
         ticker = yf.Ticker(yf_symbol)
-        # Fetch 1 year of daily data
-        df = ticker.history(period="1y", interval="1d")
+        if backfill:
+            df = ticker.history(start=BACKFILL_START, interval="1d")
+        else:
+            df = ticker.history(period="1y", interval="1d")
         
         if df.empty:
             logging.warning(f"No data found for {yf_symbol}")
@@ -183,20 +193,27 @@ def fetch_and_publish_intraday_data(channel, symbol, timeframes=None):
             logging.error(f"Error fetching {tf} data for {symbol}: {e}")
 
 if __name__ == "__main__":
+    backfill = '--backfill' in sys.argv
+    
     connection, channel = setup_rabbitmq()
     
     if connection and channel:
         # Dynamically fetch watchlist from the database
         watchlist = get_watchlist_from_db()
         
-        logging.info("Starting EOD Data Ingestion Pipeline...")
-        for stock in watchlist:
-            fetch_and_publish_eod_data(channel, stock)
+        if backfill:
+            logging.info(f"Starting BACKFILL Data Ingestion (since {BACKFILL_START})...")
+        else:
+            logging.info("Starting EOD Data Ingestion Pipeline...")
         
-        # Also fetch and cache intraday data for screener
-        logging.info("Starting Intraday Data Cache Pipeline...")
         for stock in watchlist:
-            fetch_and_publish_intraday_data(channel, stock)
+            fetch_and_publish_eod_data(channel, stock, backfill=backfill)
+        
+        # Also fetch and cache intraday data for screener (not affected by backfill)
+        if not backfill:
+            logging.info("Starting Intraday Data Cache Pipeline...")
+            for stock in watchlist:
+                fetch_and_publish_intraday_data(channel, stock)
             
         # Close connection cleanly
         connection.close()

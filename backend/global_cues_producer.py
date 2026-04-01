@@ -138,8 +138,14 @@ if __name__ == "__main__":
         logging.info("🌵 Dry Run Mode. Payload:")
         print(json.dumps(cues, indent=2))
         sys.exit(0)
+
+    if '--single-run' in sys.argv:
+        # Scheduler-managed mode: run once and exit
+        run_job()
+        logging.info("Single run complete. Exiting.")
+        sys.exit(0)
         
-    logging.info("⏰ Global Cues Producer starting up...")
+    logging.info("⏰ Global Cues Producer starting up (standalone scheduler mode)...")
     
     # Run once immediately on startup to populate the DB
     run_job()

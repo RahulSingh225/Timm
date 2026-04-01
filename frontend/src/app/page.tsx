@@ -6,7 +6,7 @@ import {
   Database, RefreshCw, Clock, PlayCircle, Server,
   Wifi, WifiOff, Brain, Shield, ChevronDown, ChevronUp,
   MessageSquare, CheckCircle2, XCircle, Loader2, Gauge,
-  Rabbit, HardDrive, Cpu
+  Rabbit, HardDrive, Cpu, CalendarClock, Timer, Play, Pause
 } from 'lucide-react';
 
 // ─── Types ──────────────────────────────────────────
@@ -72,6 +72,23 @@ interface AgentRunStats {
   running: number;
   avgDurationMs: number;
   totalLlmTokens: number;
+}
+
+interface SchedulerJob {
+  id: string;
+  description: string;
+  script: string;
+  category: 'scraper' | 'producer';
+  cron: Record<string, string>;
+  cron_human: string;
+  next_run_time: string | null;
+  last_run: {
+    status: string | null;
+    finished_at: string | null;
+    duration_ms: number | null;
+    error: string | null;
+  } | null;
+  is_paused: boolean;
 }
 
 // ─── SSE Hook with Auto-Reconnect ──────────────────
@@ -175,6 +192,9 @@ export default function CommandCenter() {
   const [agentRunStats, setAgentRunStats] = useState<AgentRunStats | null>(null);
   const [expandedRun, setExpandedRun] = useState<number | null>(null);
   const [showAllPipelines, setShowAllPipelines] = useState(false);
+  const [schedulerJobs, setSchedulerJobs] = useState<SchedulerJob[]>([]);
+  const [triggeringJob, setTriggeringJob] = useState<string | null>(null);
+  const [expandedJob, setExpandedJob] = useState<string | null>(null);
 
   // SSE with auto-reconnect
   const handleAlert = useCallback((newAlert: TradeAlert) => {
@@ -227,23 +247,51 @@ export default function CommandCenter() {
     } catch {}
   };
 
+  const fetchScheduler = async () => {
+    try {
+      const res = await fetch('/api/system/scheduler');
+      const json = await res.json();
+      if (json.jobs) setSchedulerJobs(json.jobs);
+    } catch {}
+  };
+
+  const triggerSchedulerJob = async (jobId: string) => {
+    setTriggeringJob(jobId);
+    try {
+      await fetch('/api/system/scheduler', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ job_id: jobId }),
+      });
+      // Refresh scheduler status after a brief delay
+      setTimeout(fetchScheduler, 2000);
+    } catch {
+      alert('Failed to trigger job');
+    } finally {
+      setTimeout(() => setTriggeringJob(null), 3000);
+    }
+  };
+
   useEffect(() => {
     fetchWorkers();
     fetchGlobalCues();
     fetchPipelines();
     fetchHealth();
     fetchAgentRuns();
+    fetchScheduler();
 
     const workerInterval = setInterval(fetchWorkers, 5000);
     const pipelineInterval = setInterval(fetchPipelines, 30000);
     const healthInterval = setInterval(fetchHealth, 15000);
     const agentInterval = setInterval(fetchAgentRuns, 10000);
+    const schedulerInterval = setInterval(fetchScheduler, 10000);
 
     return () => {
       clearInterval(workerInterval);
       clearInterval(pipelineInterval);
       clearInterval(healthInterval);
       clearInterval(agentInterval);
+      clearInterval(schedulerInterval);
     };
   }, []);
 
@@ -451,6 +499,140 @@ export default function CommandCenter() {
           </button>
         )}
       </div>
+
+      {/* ═══════════ SCHEDULER TIMELINE ═══════════ */}
+      {schedulerJobs.length > 0 && (
+        <div className="mb-6">
+          <h2 className="text-sm text-neutral-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+            <CalendarClock size={16} className="text-cyan-400" /> Automated Scheduler
+            <span className="bg-cyan-500/10 text-cyan-400 text-[10px] px-1.5 py-0.5 rounded border border-cyan-500/20">
+              {schedulerJobs.length} jobs
+            </span>
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {schedulerJobs.map((job) => {
+              const isTriggering = triggeringJob === job.id;
+              const lastStatus = job.last_run?.status;
+              const isExpanded = expandedJob === job.id;
+
+              // Calculate countdown
+              let countdown = '';
+              if (job.next_run_time) {
+                const diff = new Date(job.next_run_time).getTime() - Date.now();
+                if (diff > 0) {
+                  const hrs = Math.floor(diff / 3600000);
+                  const mins = Math.floor((diff % 3600000) / 60000);
+                  countdown = hrs > 0 ? `${hrs}h ${mins}m` : `${mins}m`;
+                } else {
+                  countdown = 'due';
+                }
+              }
+
+              const categoryColor = job.category === 'scraper'
+                ? 'border-amber-500/20 bg-amber-500/5'
+                : 'border-cyan-500/20 bg-cyan-500/5';
+              const categoryBadge = job.category === 'scraper'
+                ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                : 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20';
+
+              return (
+                <div
+                  key={job.id}
+                  className={`border rounded-lg overflow-hidden transition-all duration-200 hover:border-neutral-600 ${categoryColor}`}
+                >
+                  <div className="p-3">
+                    {/* Header Row */}
+                    <div className="flex items-start justify-between mb-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className={`text-[9px] uppercase font-bold px-1.5 py-0.5 rounded border ${categoryBadge}`}>
+                            {job.category}
+                          </span>
+                          {job.is_paused && (
+                            <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-neutral-800 text-neutral-500 border border-neutral-700">
+                              paused
+                            </span>
+                          )}
+                        </div>
+                        <h3 className="text-sm font-medium text-neutral-200 truncate">{job.description}</h3>
+                        <p className="text-[10px] text-neutral-500 font-mono mt-0.5">{job.cron_human}</p>
+                      </div>
+
+                      <button
+                        onClick={() => triggerSchedulerJob(job.id)}
+                        disabled={isTriggering || job.is_paused}
+                        className="shrink-0 ml-2 px-2 py-1.5 rounded text-[10px] font-bold bg-neutral-800 border border-neutral-700 hover:border-purple-500/50 hover:bg-purple-500/10 text-neutral-300 hover:text-purple-300 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
+                        title="Run now"
+                      >
+                        {isTriggering ? (
+                          <Loader2 size={10} className="animate-spin" />
+                        ) : (
+                          <Play size={10} />
+                        )}
+                        {isTriggering ? 'Running' : 'Run Now'}
+                      </button>
+                    </div>
+
+                    {/* Status Row */}
+                    <div className="flex items-center justify-between mt-2 pt-2 border-t border-neutral-800/50">
+                      {/* Last Run */}
+                      <div className="flex items-center gap-1.5">
+                        {lastStatus === 'SUCCESS' ? (
+                          <CheckCircle2 size={12} className="text-emerald-400" />
+                        ) : lastStatus === 'FAILED' || lastStatus === 'TIMEOUT' ? (
+                          <XCircle size={12} className="text-red-400" />
+                        ) : (
+                          <Clock size={12} className="text-neutral-600" />
+                        )}
+                        <span className="text-[11px] text-neutral-400">
+                          {job.last_run?.finished_at
+                            ? timeAgo(job.last_run.finished_at)
+                            : 'Never run'}
+                        </span>
+                        {job.last_run?.duration_ms && (
+                          <span className="text-[10px] text-neutral-600">
+                            ({(job.last_run.duration_ms / 1000).toFixed(1)}s)
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Next Run */}
+                      {job.next_run_time && !job.is_paused && (
+                        <div className="flex items-center gap-1.5">
+                          <Timer size={11} className="text-cyan-500" />
+                          <span className="text-[11px] text-cyan-400 font-mono">
+                            {countdown === 'due' ? 'Due now' : `in ${countdown}`}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Error expand button */}
+                    {job.last_run?.error && (
+                      <button
+                        onClick={() => setExpandedJob(isExpanded ? null : job.id)}
+                        className="mt-2 text-[10px] text-red-400 hover:text-red-300 flex items-center gap-1"
+                      >
+                        {isExpanded ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
+                        {isExpanded ? 'Hide error' : 'Show error'}
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Expanded Error */}
+                  {isExpanded && job.last_run?.error && (
+                    <div className="border-t border-neutral-800/50 p-3 bg-red-950/10">
+                      <pre className="text-[10px] text-red-400/80 whitespace-pre-wrap overflow-x-auto max-h-24">
+                        {job.last_run.error}
+                      </pre>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* ═══════════ RABBITMQ QUEUE DEPTH ═══════════ */}
       {health?.rabbitmq?.status === 'connected' && health.rabbitmq.queues.length > 0 && (

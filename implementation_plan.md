@@ -1,263 +1,323 @@
-# TIMM Co-Pilot Expansion — Implementation Plan
+# Agent Ecosystem Redesign — From Signals to Trading Intelligence
 
-## Goal
+## Your Trading Edge, Encoded
 
-Transform TIMM from a passive alerting system into an **active trading co-pilot** that:
-1. **Screens stocks** for intraday trades targeting 2-3% moves
-2. **Tracks NIFTY/SENSEX** for options scalping setups (20-30%+ target)
-3. **Monitors global cues** (US markets, VIX, global events) as background confidence signals
-4. **Tracks active trades** with stop-loss and target alerts
-5. Analyzes across **multiple timeframes** (5m, 15m, 1h, 1d)
+Your process as a retail trader, distilled into what the agents need to replicate:
 
-## User Review Required
+```
+┌────────────────────────────────────────────────────────────┐
+│  YOUR DECISION FRAMEWORK (60-70% win rate)                 │
+│                                                            │
+│  PRE-MARKET (WATCHLIST BUILDING)                           │
+│  ├─ Any news catalyst? (earnings, sector shift, global)    │
+│  ├─ Global cues: US markets, VIX regime, GIFT Nifty        │
+│  ├─ Price Action: Is there a clear trend?                  │
+│  ├─ EMA Crossover confirmation (9/21/50/200)               │
+│  ├─ BB reversal or squeeze detection                       │
+│  ├─ Support/Resistance levels from daily chart             │
+│  └─ VERDICT: "This stock has 2%+ move potential today"     │
+│                                                            │
+│  INTRADAY (ENTRY TIMING)                                   │
+│  ├─ Watch price at key S/R levels                          │
+│  ├─ 15m EMA stack alignment                                │
+│  ├─ VWAP reclaim/rejection                                 │
+│  ├─ Volume confirmation                                    │
+│  └─ VERDICT: "Enter NOW at ₹X, SL ₹Y, Target ₹Z"         │
+└────────────────────────────────────────────────────────────┘
+```
 
-> [!IMPORTANT]
-> **Screener Logic**: You mentioned you have custom screening criteria for intraday trades. The plan below implements a **baseline screener** with common institutional-grade filters (gap-up/down, volume spike, VWAP, ATR). After Phase 2 is built, we'll iterate on teaching it your exact personal rules. Please review the proposed filters below and tell me what to add/change.
+---
 
-> [!IMPORTANT]
-> **Data Source for Intraday**: Yahoo Finance ([yfinance](file:///c:/Users/blkhrt/Documents/git/Timm/main.py#151-155)) provides intraday data (5m, 15m, 1h) but with limitations:
-> - 5-min data: only last **60 days** of history
-> - 15-min data: only last **60 days**
-> - Data is **delayed by ~15 minutes** (not real-time)
->
-> For truly real-time intraday screening, we'd eventually need Zerodha WebSocket or a paid data feed. For now, yfinance gives us enough to build and validate the screener logic. Is this acceptable for the first version?
+## Current Agent Audit
 
-> [!WARNING]
-> **Scope**: This is a large expansion (~15 new/modified files). I recommend building it in phases — shipping Phase 1+2 first, then 3+4+5. Do you want all phases built at once, or iteratively?
+| Agent | What It Does Now | Gaps / Problems |
+|-------|-----------------|-----------------|
+| **Swing Agent** (`swing_agent_ta.py` + `swing_agent_worker.py`) | EMA 50/200 cross, RSI extremes, MACD crossover | ❌ No BB, no S/R levels, no multi-timeframe, no entry/SL/target prices, no `agent_runs` logging |
+| **Options Agent** (`options_agent_worker.py`) | ATM IV spike check, PCR volume ratio | ❌ No Max Pain, no OI buildup detection, no IV percentile ranking, no trend-over-time |
+| **Vector Agent** (`candle_vector_agent.py`) | 4D candle vector math + linear regression | ❌ Only processes NIFTY, doesn't analyze individual stocks, results are numeric not actionable |
+| **Screener Agent** (`screener_agent_worker.py`) | Gap, Volume, ATR, EMA stack, VWAP, RSI filters | ✅ Most complete agent. But ❌ intraday-only, no swing mode, no BB squeeze |
+| **Head Analyst** (`head_analyst_worker.py`) | Takes an alert → asks LLM for 3-sentence brief | ❌ No context injection (no global cues, no other agent data), LLM operates blind |
+| **Price Monitor** (`price_monitor_worker.py`) | Polls active trades for SL/target hits | ✅ Solid. Works as designed. |
+
+---
+
+## Proposed Agent Hierarchy
+
+```
+LEVEL 0 — DATA LAYER (Scrapers/Producers)
+═══════════════════════════════════════════
+yfinance → news → NSE flows → NSDL → global cues → options bhavcopy
+    │          │        │                               │
+    ▼          ▼        ▼                               ▼
+    └────────── [RabbitMQ Exchange] ─────────────────────┘
+                        │
+LEVEL 1 — SPECIALIST ANALYSTS (Each stock, each angle)
+═══════════════════════════════════════════
+    ├── Swing TA Agent ──── trend, EMAs, BB, S/R, MACD
+    ├── Options Agent ────── IV regime, OI buildup, Max Pain, PCR trend
+    └── Vector Agent ─────── momentum vectors, regression predictions
+                        │
+                        ▼ (all publish to exchange)
+LEVEL 2 — SYNTHESIS (Combine signals into trade ideas)
+═══════════════════════════════════════════
+    └── Screener Agent ──── multi-signal confluence scoring
+        ├── "RELIANCE: 3 bullish signals, confidence 75%"
+        ├── "HDFCBANK: BB squeeze + volume spike, confidence 65%"
+        └── produces STRUCTURED trade ideas (entry/SL/target)
+                        │
+                        ▼
+LEVEL 3 — INTELLIGENCE (Strategic decision layer)
+═══════════════════════════════════════════
+    └── Head Analyst ──── receives ALL screener outputs + global cues
+        ├── Produces "MORNING BRIEF" (pre-market watchlist)
+        ├── Produces "EOD REVIEW" (what happened, what to watch)
+        └── Uses LLM with FULL CONTEXT (not blind)
+                        │
+                        ▼
+LEVEL 4 — EXECUTION (Monitor live trades)
+═══════════════════════════════════════════
+    └── Price Monitor ──── tracks SL/target on active positions
+```
 
 ---
 
 ## Proposed Changes
 
-### Phase 1 — Database Schema & Foundation
+### Component 1: Swing Agent Upgrade
 
-#### [MODIFY] [schema.ts](file:///c:/Users/blkhrt/Documents/git/Timm/dashboard/src/db/schema.ts)
+#### [MODIFY] [swing_agent_ta.py](file:///Users/spacempact/Desktop/git/Timm/backend/swing_agent_ta.py)
 
-Add 3 new tables:
+**Add the analysis techniques you actually use:**
 
-```typescript
-// SCREENED STOCKS — Output of the Screener Agent
-screened_stocks: {
-  id, symbol, screened_at,
-  timeframe,           // '5m', '15m', '1h', '1d'
-  trade_type,          // 'INTRADAY', 'SWING'
-  setup_type,          // 'GAP_UP', 'VOLUME_SPIKE', 'VWAP_RECLAIM', etc.
-  entry_price, target_price, stoploss_price,
-  target_pct, risk_pct,
-  confidence,          // 0-100 score combining TA + global cues
-  signals (JSONB),     // Array of reasons this stock was screened
-  status               // 'ACTIVE', 'TRIGGERED', 'EXPIRED'
-}
+| New Analysis | What It Detects |
+|-------------|----------------|
+| **Bollinger Band Squeeze** | Low volatility → imminent breakout (BB width < 20-day avg) |
+| **BB Reversal** | Price touches lower BB then closes inside (mean reversion) |
+| **Pivot Point S/R** | Classic, Fibonacci, and Camarilla pivot levels for today |
+| **Daily Support/Resistance** | Recent swing highs/lows as S/R zones |
+| **ATR-based Targets** | Realistic ₹ targets using ATR (2% move validation) |
+| **Multi-timeframe Trend** | Weekly + Daily trend agreement |
 
-// ACTIVE TRADES — SL/Target Tracking
-active_trades: {
-  id, symbol, trade_type,    // 'INTRADAY_STOCK', 'OPTIONS_SCALP', 'SWING'
-  entry_price, stoploss, target,
-  current_price,
-  entry_time, exit_time,
-  status,              // 'OPEN', 'SL_HIT', 'TARGET_HIT', 'MANUAL_EXIT'
-  pnl_pct,
-  notes
-}
-
-// GLOBAL CUES — Background Confidence Signals
-global_cues: {
-  id, captured_at,
-  spy_change_pct, qqq_change_pct, dji_change_pct,
-  vix_value, vix_change_pct,
-  sgx_nifty, sgx_change_pct,
-  usd_inr,
-  gift_nifty,
-  overall_bias          // 'RISK_ON', 'RISK_OFF', 'NEUTRAL'
+**Enhanced output structure:**
+```python
+{
+  "symbol": "RELIANCE",
+  "close_price": 2841.50,
+  "trend": {
+    "daily": "BULLISH",      # Price > 50 EMA > 200 EMA
+    "weekly": "BULLISH",     # Weekly close > weekly 50 EMA
+    "alignment": "STRONG"    # Both agree
+  },
+  "support_resistance": {
+    "nearest_support": 2790,
+    "nearest_resistance": 2900,
+    "pivot": 2845,
+    "r1": 2875, "r2": 2910,
+    "s1": 2810, "s2": 2780
+  },
+  "signals": [...],
+  "move_potential_pct": 2.3,  # ATR-based expected move
+  "signal_type": "BULLISH",
+  "confidence": 72
 }
 ```
 
-#### [MODIFY] [drizzle/schema.ts](file:///c:/Users/blkhrt/Documents/git/Timm/dashboard/drizzle/schema.ts)
+---
 
-Will be auto-synced by running `npx drizzle-kit generate` + `npx drizzle-kit push`.
+#### [MODIFY] [swing_agent_worker.py](file:///Users/spacempact/Desktop/git/Timm/backend/swing_agent_worker.py)
 
-#### [MODIFY] [db_vault_worker.py](file:///c:/Users/blkhrt/Documents/git/Timm/db_vault_worker.py)
-
-Add handlers for 3 new routing keys:
-- `screener.intraday.*` → insert into `screened_stocks`
-- `trade.active.*` → insert/update `active_trades`
-- `market.global.cues` → insert into `global_cues`
-- `alert.stoploss.*` and `alert.target.*` → update `active_trades` status
-
-Add queue bindings for all new routing keys.
+- Use the upgraded `swing_agent_ta.py` analysis
+- **Log every run to `agent_runs` table** (start time, duration, symbols processed, errors)
+- Publish richer alert payloads with S/R levels and entry/SL/target
 
 ---
 
-### Phase 2 — Intraday Screener Agent + Multi-Timeframe
+### Component 2: Options Agent Upgrade
 
-#### [NEW] [screener_agent_worker.py](file:///c:/Users/blkhrt/Documents/git/Timm/screener_agent_worker.py)
+#### [MODIFY] [options_agent_worker.py](file:///Users/spacempact/Desktop/git/Timm/backend/options_agent_worker.py)
 
-The core new module. A RabbitMQ worker that:
+**New analysis capabilities:**
 
-1. **Subscribes to** `market.eod.*` (daily data from yfinance producer)
-2. **On receiving daily data**, fetches multi-timeframe data (15m, 1h) for that symbol via yfinance
-3. **Runs screening filters** on each stock:
+| Feature | Description |
+|---------|-------------|
+| **Max Pain** | Strike where most options expire worthless → magnetic price level |
+| **OI Buildup Detection** | Significant OI increase = smart money positioning |
+| **IV Percentile** | Current IV vs 30-day range → "is premium cheap or expensive?" |
+| **PCR Trend** | PCR over last 5 sessions → directional conviction of smart money |
+| **Strangle Analysis** | ATM straddle premium → implied expected move for the week |
 
-**Baseline Intraday Filters (2-3% target):**
-| Filter | Logic | Why |
-|--------|-------|-----|
-| Gap-Up/Down | Open > prev close by 1%+ | Momentum gap trades |
-| Volume Spike | Volume > 2x 20-day avg in first 30 mins | Institutional participation |
-| VWAP Reclaim | Price dips below VWAP then closes above | Mean-reversion setup |
-| ATR Expansion | Current ATR > 1.5x 14-day avg ATR | Volatility = opportunity |
-| EMA Stack (15m) | 9 EMA > 21 EMA > 50 EMA | Multi-timeframe trend alignment |
-| RSI Reversal (15m) | RSI crosses above 40 from below | Early momentum shift |
-
-4. **Calculates entry/target/SL** based on ATR and percentage criteria
-5. **Scores confidence** (0-100) combining TA signals + latest global cues from DB
-6. **Publishes** screened results to `screener.intraday.{symbol}`
-
-#### [MODIFY] [yfinance_producer.py](file:///c:/Users/blkhrt/Documents/git/Timm/yfinance_producer.py)
-
-Add a new function `fetch_and_publish_intraday_data(channel, symbol)`:
-- Fetches 15m and 1h candles (last 5 days)
-- Publishes to `market.intraday.{symbol}` with timeframe metadata
-- Called alongside the existing EOD fetch
-
-#### [MODIFY] [main.py](file:///c:/Users/blkhrt/Documents/git/Timm/main.py)
-
-Add `"screener": "screener_agent_worker.py"` to `workers_registry`.
-
----
-
-### Phase 3 — Global Cues Producer
-
-#### [NEW] [global_cues_producer.py](file:///c:/Users/blkhrt/Documents/git/Timm/global_cues_producer.py)
-
-Runs as a scheduled task (triggered pre-market ~8:30 AM IST):
-1. Fetches via yfinance:
-   - **SPY** (S&P 500 ETF) — overnight % change
-   - **QQQ** (NASDAQ ETF) — overnight % change
-   - **^DJI** (Dow Jones) — overnight % change
-   - **^VIX** — current VIX value + % change
-   - **^NSEI** (Nifty 50) — previous close reference
-   - **USDINR=X** — USD/INR rate
-2. Calculates `overall_bias`:
-   - RISK_ON: SPY/QQQ green + VIX < 18
-   - RISK_OFF: SPY/QQQ red + VIX > 25
-   - NEUTRAL: mixed signals
-3. Publishes to `market.global.cues`
-
-#### [MODIFY] [api/rag/route.ts](file:///c:/Users/blkhrt/Documents/git/Timm/dashboard/src/app/api/rag/route.ts)
-
-Add global cues + screened stocks to the RAG context envelope:
-```
-[GLOBAL CUES (Pre-Market)]
-SPY: +0.3%, QQQ: +0.5%, VIX: 16.2 (-3.1%), Bias: RISK_ON
-
-[SCREENED INTRADAY CANDIDATES]
-- TATAMOTOR: GAP_UP +1.8%, Volume 3.2x avg, Confidence: 78%
-- INFY: VWAP_RECLAIM, EMA stacked, Confidence: 65%
+**Enhanced output:**
+```python
+{
+  "symbol": "NIFTY",
+  "agent": "Options",
+  "max_pain": 24500,
+  "current_iv_percentile": 65,
+  "expected_move_pct": 1.8,
+  "pcr_5day_trend": "RISING",    # Smart money buying protection
+  "key_oi_levels": {
+    "call_wall": 25000,           # Resistance
+    "put_wall": 24000,            # Support
+  },
+  "signals": [...],
+  "verdict": "NEUTRAL_BEARISH"    # Max pain below CMP + rising PCR
+}
 ```
 
 ---
 
-### Phase 4 — Stop-Loss / Target Alert System
+### Component 3: Vector Agent Extension
 
-#### [NEW] [price_monitor_worker.py](file:///c:/Users/blkhrt/Documents/git/Timm/price_monitor_worker.py)
+#### [MODIFY] [candle_vector_agent.py](file:///Users/spacempact/Desktop/git/Timm/backend/candle_vector_agent.py)
 
-A persistent worker that:
-1. Every 60 seconds, queries `active_trades` for all `OPEN` positions
-2. Fetches current price via yfinance for each symbol
-3. Checks: `current_price <= stoploss` → publish `alert.stoploss.{symbol}`
-4. Checks: `current_price >= target` → publish `alert.target.{symbol}`
-5. Updates `current_price` and `pnl_pct` in the DB
-6. On SL/target hit, sets trade status to `SL_HIT` or `TARGET_HIT`
-
-#### [MODIFY] [main.py](file:///c:/Users/blkhrt/Documents/git/Timm/main.py)
-
-Add `"price_monitor": "price_monitor_worker.py"` to `workers_registry`.
+- **Process individual stocks** (not just NIFTY) — add routing for `market.eod.*`
+- Classify vectors into **accumulation/distribution** patterns
+- Produce human-readable verdicts: "Strong accumulation detected, 3rd consecutive bullish vector with expanding confidence"
 
 ---
 
-### Phase 5 — Dashboard UI
+### Component 4: Screener Agent — Add Swing Mode
 
-#### [NEW] [app/screener/page.tsx](file:///c:/Users/blkhrt/Documents/git/Timm/dashboard/src/app/screener/page.tsx)
+#### [MODIFY] [screener_agent_worker.py](file:///Users/spacempact/Desktop/git/Timm/backend/screener_agent_worker.py)
 
-**Intraday Screener Dashboard:**
-- Table of screened stocks with columns: Symbol, Setup Type, Entry, Target (%), SL, Confidence, Timeframe, Screened At
-- Color-coded confidence badges (green > 70, yellow 40-70, red < 40)
-- Button to "Track This Trade" → creates an entry in `active_trades`
-- SSE stream for live screener results
-- Filter by trade_type (INTRADAY / SWING)
+Add new filters:
 
-#### [NEW] [app/trades/page.tsx](file:///c:/Users/blkhrt/Documents/git/Timm/dashboard/src/app/trades/page.tsx)
+| Filter | For |
+|--------|-----|
+| **BB Squeeze Screen** | Identify compression before breakout (swing) |
+| **Sector Strength** | Only pick stocks from strong sectors (using NSDL data) |
+| **Swing Mode** | Hold 3-7 days, larger targets (5-8%), wider SL (2-3%) |
+| **Options Swing Mode** | Identify high-IV-percentile stocks for premium selling, or low-IV for buying |
 
-**Active Trades Tracker:**
-- Table of open trades with real-time P&L %
-- SL/Target progress bar visualization
-- Status badges: OPEN (blue), SL_HIT (red), TARGET_HIT (green)
-- Trade history log with win/loss ratio
-- Manual entry form for new trades
-
-#### [NEW] API Routes
-
-| Route | Method | Purpose |
-|-------|--------|---------|
-| `/api/screener/results` | GET | Latest screened stocks from DB |
-| `/api/screener` | SSE | Live stream of new screener results |
-| `/api/trades` | GET/POST | List/create active trades |
-| `/api/trades/[id]` | PATCH/DELETE | Update/close a trade |
-| `/api/global` | GET | Latest global cues |
-
-#### [MODIFY] [Navigation.tsx](file:///c:/Users/blkhrt/Documents/git/Timm/dashboard/src/components/Navigation.tsx)
-
-Add new nav items: "Screener" and "Trades".
-
-#### [MODIFY] Command Center ([page.tsx](file:///c:/Users/blkhrt/Documents/git/Timm/dashboard/src/app/page.tsx))
-
-Add a "Global Cues" mini-widget showing SPY/QQQ/VIX with colored arrows.
+- New trade_type: `SWING`, `OPTIONS_SWING` (in addition to existing `INTRADAY`)
+- Integrate global cues more deeply: VIX regime affects preferred strategy
 
 ---
 
-## New Dependencies
+### Component 5: Head Analyst — From Parrot to Strategist
 
-**Python** ([requirements.txt](file:///c:/Users/blkhrt/Documents/git/Timm/requirements.txt)):
-- `schedule` — for timed pre-market global cues fetch
-- `numpy` — already used by vector agent, needed for ATR calculations
+#### [MODIFY] [head_analyst_worker.py](file:///Users/spacempact/Desktop/git/Timm/backend/head_analyst_worker.py)
 
-**No new npm packages needed** — everything uses existing Drizzle, Lucide, Next.js.
+This is the biggest mindset change. Currently the Head Analyst receives a single alert and asks the LLM "summarize this". That's wasteful. Instead:
+
+**New Workflow:**
+1. **Batch mode**: Collect all alerts from the last analysis cycle (not one-at-a-time)
+2. **Inject full context** into the LLM prompt:
+   - Current global cues (VIX, US markets, bias)
+   - All screener results (which stocks passed, their confidence)
+   - FII/DII flow directional bias
+   - Sector rotation signals from NSDL data
+3. **Produce structured output**:
+   - **TOP 3 TRADE IDEAS** with entry/SL/target
+   - **AVOID LIST** — stocks that look good but have contradicting signals
+   - **MACRO VERDICT** — brief on global positioning
+
+**Enhanced system prompt (key excerpt):**
+```
+You are a senior prop desk analyst. You have:
+- {N} stocks that passed screening with scores above 60
+- Global bias is {RISK_ON/OFF}, VIX is {value}
+- FII were net {BUY/SELL} ₹{amount}Cr yesterday
+- Top sectors by FII flow: {sector_list}
+
+Rank the top 3 trade ideas by conviction. For each:
+1. State the stock and direction (LONG/SHORT)
+2. State the primary setup (e.g., "BB squeeze breakout + volume spike")
+3. Give exact ENTRY, STOPLOSS, TARGET
+4. State the risk: what would invalidate this trade?
+```
 
 ---
+
+### Component 6: New — Daily Report Generator
+
+#### [NEW] [daily_report_generator.py](file:///Users/spacempact/Desktop/git/Timm/backend/daily_report_generator.py)
+
+A **batch-mode orchestrator** that can be triggered from the scheduler or dashboard:
+
+1. Fetches all watchlist symbols
+2. Runs Swing TA on each → produces per-stock analysis
+3. Runs Screener filters → identifies high-conviction setups
+4. Queries DB for latest global cues + FII flows
+5. Assembles everything into a structured JSON report
+6. Publishes to a new `daily_report` routing key → stored in DB
+7. Triggers Head Analyst for the final LLM-powered brief
+
+**Output format for dashboard consumption:**
+```python
+{
+  "report_date": "2026-04-02",
+  "market_regime": "RISK_ON",
+  "vix": 14.2,
+  "fii_net": "+2340 Cr",
+  "watchlist_analysis": [
+    {
+      "symbol": "RELIANCE",
+      "daily_trend": "BULLISH",
+      "signals_count": 4,
+      "confidence": 78,
+      "screener_verdict": "PASS",
+      "trade_idea": {
+        "direction": "LONG",
+        "entry": 2842,
+        "stoploss": 2810,
+        "target": 2910,
+        "risk_reward": "1:2.4"
+      },
+      "key_signals": ["EMA RECLAIM", "BB REVERSAL", "VOLUME SPIKE", "RSI BOUNCE"]
+    },
+    ...
+  ],
+  "top_picks": ["RELIANCE", "HDFCBANK", "INFY"],
+  "avoid": ["TATASTEEL"],
+  "head_analyst_brief": "..."
+}
+```
+
+---
+
+### Component 7: New API + Dashboard Page
+
+#### [NEW] `api/system/daily-report/route.ts` — Fetch the latest daily report
+
+#### [MODIFY] `page.tsx` — Add "Daily Intelligence" card showing top picks + brief
+
+---
+
+## Execution Order (Phase 1 — Immediate: Get Readable Output)
+
+> [!IMPORTANT]
+> **Phase 1 focuses on making every agent produce real, actionable, readable output.** Before adding new analysis techniques, we first ensure the existing pipeline produces results end-to-end.
+
+1. **Upgrade `swing_agent_ta.py`** — Add BB, S/R levels, ATR targets, structured output
+2. **Upgrade `swing_agent_worker.py`** — Use new TA + agent_runs logging
+3. **Upgrade `options_agent_worker.py`** — Max Pain + OI buildup + structured output
+4. **Upgrade `candle_vector_agent.py`** — Process individual stocks + readable verdicts
+5. **Upgrade `head_analyst_worker.py`** — Context-rich prompts + structured LLM output
+6. **Create `daily_report_generator.py`** — Batch orchestrator
+7. **Add Swing mode to screener** — BB squeeze + swing parameters
+
+---
+
+## Open Questions
+
+> [!IMPORTANT]  
+> **Strategy Encoding**: You mentioned specific observations that work 60-70% of the time. Beyond EMA crossovers and BB reversals, are there any specific patterns/rules you want hardcoded? For example:
+> - "If stock gaps up 1%+ with volume, it usually continues 2% same direction"
+> - "If FII bought heavily in a sector, stocks in that sector rally next day"
+> - Any specific stocks or sectors you prefer to trade?
+
+> [!WARNING]
+> **LLM Dependency**: The Head Analyst currently depends on Ollama running. If the LLM is offline, the batch report should still generate — just without the narrative brief. Is this acceptable?
 
 ## Verification Plan
 
 ### Automated Tests
-
-No existing test suite exists. Since this is an event-driven system with external APIs, verification is done through integration checks:
-
-1. **Schema migration check**:
-   ```bash
-   cd dashboard && npx drizzle-kit generate && npx drizzle-kit push
-   ```
-   Verify all 3 new tables exist in PostgreSQL.
-
-2. **Worker startup check**:
-   ```bash
-   python main.py
-   ```
-   Verify all workers (including new screener + price_monitor) start without import errors.
-
-3. **Screener dry-run test** (standalone):
-   ```bash
-   python screener_agent_worker.py --dry-run
-   ```
-   We'll add a `--dry-run` flag that fetches data for one stock (RELIANCE) and prints screener output without publishing to RabbitMQ.
+- Run each agent in `--dry-run` mode against a test symbol (RELIANCE)
+- Verify structured JSON output matches expected schema
+- Verify `agent_runs` table gets populated with run metadata
 
 ### Manual Verification
-
-1. **Start the full stack**: `python main.py` (backend) + `cd dashboard && yarn dev` (frontend)
-2. **Run yfinance producer**: `python yfinance_producer.py` — check that data flows through RabbitMQ
-3. **Check screener page**: Navigate to `http://localhost:3000/screener` — verify screened stocks appear
-4. **Test trade tracking**: Click "Track This Trade" on a screened stock → check it appears on `/trades`
-5. **Check global cues**: Run `python global_cues_producer.py` → verify data shows on Command Center
-6. **Test RAG context**: Go to `/chat` and ask "What are today's intraday setups?" → verify screener data appears in response
-7. **Test SL/target**: Create a trade with a tight SL → verify alert fires when price is below SL
-
-> [!NOTE]
-> Since yfinance data is delayed, SL/target alerts will have ~15 min latency. For verification, we can set an artificially close SL to trigger quickly.
+- Trigger the daily report generator from the dashboard
+- Review the output for correctness against actual market data
+- Confirm the Head Analyst produces actionable, non-generic commentary

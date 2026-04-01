@@ -296,7 +296,7 @@ def process_message(ch, method, properties, body):
         elapsed_ms = int((time.monotonic() - start_time) * 1000)
         logging.error(f"Failed to process options for {symbol or 'unknown'}: {e}")
         _log_run('options_agent', 'FAILED', elapsed_ms, symbol, str(e)[:500])
-        ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
+        ch.basic_ack(delivery_tag=method.delivery_tag)  # Don't requeue — prevents infinite loops
 
 
 def start_options_agent():

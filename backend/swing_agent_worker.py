@@ -1,11 +1,11 @@
 """
-Swing Agent Worker v2.0
+Swing Agent Worker v2.2
 
-RabbitMQ consumer that:
-1. Receives EOD market data from yfinance_producer
-2. Runs the full swing TA analysis (swing_agent_ta.py)
-3. Publishes structured alerts with entry/SL/target
-4. Logs every run to the agent_runs table for observability
+RabbitMQ consumer with strict defensive programming:
+- Gracefully handles missing keys (like 'data') to avoid KeyError.
+- Circuit breaker: Skips flaky symbols after 3 consecutive errors.
+- Deduplication: Prevents redundant heavy processing.
+- Re-queue=False: Never puts failed messages back on queue.
 """
 
 import pika
@@ -15,6 +15,7 @@ import pandas as pd
 import logging
 import os
 import psycopg2
+from datetime import datetime
 from dotenv import load_dotenv
 from swing_agent_ta import analyze_swing_setups
 
@@ -30,9 +31,13 @@ RABBITMQ_USER = os.getenv('RABBITMQ_USER', 'admin')
 RABBITMQ_PASS = os.getenv('RABBITMQ_PASS', 'supersecretpassword')
 DB_URL = os.getenv('DATABASE_URL')
 
+# ─── Guard Rails ───────────────────────────────────────────
+_last_processed: dict[str, str] = {}  # symbol -> latest_date_str
+_consecutive_failures: dict[str, int] = {}  # symbol -> failure count
+MAX_CONSECUTIVE_FAILURES = 3
+
 
 def _log_run(agent_name, status, duration_ms, symbol=None, error=None):
-    """Log agent run to agent_runs table."""
     try:
         conn = psycopg2.connect(DB_URL)
         cur = conn.cursor()
@@ -43,111 +48,135 @@ def _log_run(agent_name, status, duration_ms, symbol=None, error=None):
         conn.commit()
         cur.close()
         conn.close()
-    except Exception as e:
-        logging.warning(f"Failed to log run: {e}")
+    except Exception:
+        pass
+
+
+def _get_data_date(payload: dict) -> str | None:
+    data = payload.get('data', [])
+    if not data or not isinstance(data, list):
+        return None
+    last_entry = data[-1]
+    return last_entry.get('Date') or last_entry.get('date') or last_entry.get('timestamp')
 
 
 def process_message(ch, method, properties, body):
-    """Process incoming EOD data and generate swing analysis alerts."""
     start_time = time.monotonic()
-    symbol = None
+    symbol = "unknown"
 
     try:
-        payload = json.loads(body)
-        symbol = payload['symbol']
-        logging.info(f"Received EOD data for {symbol}. Running Swing Analysis...")
+        # Strict parsing
+        try:
+            payload = json.loads(body)
+        except json.JSONDecodeError:
+            logging.error("Failed to decode JSON message body.")
+            ch.basic_ack(delivery_tag=method.delivery_tag)
+            return
 
-        # Convert JSON array back into DataFrame
-        df = pd.DataFrame(payload['data'])
+        # Defensive key access
+        symbol = payload.get('symbol', 'unknown')
+        data_list = payload.get('data', [])
 
-        # Normalize column names
+        # ── Guard 1: Detect payloads from other topics accidentally bound ──
+        if not symbol or symbol == "unknown" or not isinstance(data_list, list) or not data_list:
+            logging.warning(f"⏭️ {symbol}: Received malformed or non-EOD payload. Discarding.")
+            ch.basic_ack(delivery_tag=method.delivery_tag)
+            return
+
+        # ── Guard 2: Circuit breaker check ──
+        if _consecutive_failures.get(symbol, 0) >= MAX_CONSECUTIVE_FAILURES:
+            logging.warning(f"🛑 {symbol}: Circuit breaker active after {MAX_CONSECUTIVE_FAILURES} failures. Skipping.")
+            ch.basic_ack(delivery_tag=method.delivery_tag)
+            return
+
+        # ── Guard 3: Deduplication check ──
+        latest_date = _get_data_date(payload)
+        if latest_date and _last_processed.get(symbol) == latest_date:
+            logging.info(f"⏭️ {symbol}: {latest_date} already analyzed. Skipping.")
+            ch.basic_ack(delivery_tag=method.delivery_tag)
+            return
+
+        logging.info(f"📈 Analyzing {symbol} (EOD batch up to {latest_date})...")
+
+        # Load into DF and normalize
+        df = pd.DataFrame(data_list)
+        df.columns = [c.title() for c in df.columns] # Ensure title case (Date, Open, etc)
+        
         if 'Date' in df.columns:
             df['Date'] = pd.to_datetime(df['Date'])
             df.set_index('Date', inplace=True)
         df.sort_index(inplace=True)
 
-        # Run the full TA analysis
-        report = analyze_swing_setups(df, symbol)
+        if len(df) < 50: # Minimum requirement reduced for safety, but check for 200 inside engine
+            logging.info(f"⏭️ {symbol}: Insufficient candle length. Skipping.")
+            ch.basic_ack(delivery_tag=method.delivery_tag)
+            return
 
+        # Run Analysis
+        report = analyze_swing_setups(df, symbol)
         elapsed_ms = int((time.monotonic() - start_time) * 1000)
 
+        # Track success
+        if latest_date: _last_processed[symbol] = latest_date
+        _consecutive_failures[symbol] = 0
+
         if report and report.get('signals'):
-            # Build alert payload with full structured data
-            alert_payload = {
-                "agent": "Swing",
-                "symbol": symbol,
-                "close_price": report['close_price'],
-                "signals": report['signals'],
-                "signal_type": report['signal_type'],
-                "confidence": report['confidence'],
-                "trend": report['trend'],
-                "support_resistance": report['support_resistance'],
-                "bollinger": report['bollinger'],
-                "indicators": report['indicators'],
-                "move_potential_pct": report['move_potential_pct'],
-                "trade_idea": report['trade_idea'],
-            }
-
-            alert_routing_key = f"alert.swing.{symbol}"
-
+            # Forward alert to exchange
             ch.basic_publish(
                 exchange=EXCHANGE_NAME,
-                routing_key=alert_routing_key,
-                body=json.dumps(alert_payload, default=str),
-                properties=pika.BasicProperties(delivery_mode=2)
+                routing_key=f"alert.swing.{symbol}",
+                body=json.dumps(report, default=str),
+                properties=pika.BasicProperties(delivery_mode=2, content_type='application/json')
             )
-
-            sig_count = len(report['signals'])
-            logging.info(
-                f"🚨 ALERT: {symbol} | {report['signal_type']} | "
-                f"{sig_count} signals | Confidence: {report['confidence']}% | "
-                f"Move potential: {report['move_potential_pct']}%"
-            )
-
-            if report.get('trade_idea'):
-                idea = report['trade_idea']
-                logging.info(
-                    f"   💡 Trade Idea: {idea['direction']} | "
-                    f"Entry ₹{idea['entry']} → Target ₹{idea['target']} | "
-                    f"SL ₹{idea['stoploss']} | R:R {idea['risk_reward']}"
-                )
-
+            logging.info(f"🚨 ALERT: {symbol} | Confidence: {report['confidence']}%")
             _log_run('swing_agent', 'SUCCESS', elapsed_ms, symbol)
         else:
-            logging.info(f"No actionable setups for {symbol} today.")
             _log_run('swing_agent', 'SUCCESS', elapsed_ms, symbol)
 
         ch.basic_ack(delivery_tag=method.delivery_tag)
 
     except Exception as e:
         elapsed_ms = int((time.monotonic() - start_time) * 1000)
-        logging.error(f"Failed to process {symbol or 'unknown'}: {e}")
+        logging.error(f"❌ Critical Failure for {symbol}: {str(e)}")
         _log_run('swing_agent', 'FAILED', elapsed_ms, symbol, str(e)[:500])
-        ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
+
+        _consecutive_failures[symbol] = _consecutive_failures.get(symbol, 0) + 1
+        
+        # ACK (remove) faulty message to avoid infinite re-queue loops
+        if ch.is_open:
+            ch.basic_ack(delivery_tag=method.delivery_tag)
 
 
 def start_swing_agent():
-    """Connects to RabbitMQ and starts listening."""
-    credentials = pika.PlainCredentials(RABBITMQ_USER, RABBITMQ_PASS)
-    parameters = pika.ConnectionParameters(RABBITMQ_HOST, 5672, '/', credentials)
-    connection = pika.BlockingConnection(parameters)
-    channel = connection.channel()
-
-    channel.exchange_declare(exchange=EXCHANGE_NAME, exchange_type='topic', durable=True)
-    channel.queue_declare(queue=QUEUE_NAME, durable=True)
-    channel.queue_bind(exchange=EXCHANGE_NAME, queue=QUEUE_NAME, routing_key='market.eod.*')
-
-    channel.basic_qos(prefetch_count=1)
-    channel.basic_consume(queue=QUEUE_NAME, on_message_callback=process_message)
-
-    logging.info("📈 Swing Agent v2.0 is online. Waiting for market data...")
     try:
+        credentials = pika.PlainCredentials(RABBITMQ_USER, RABBITMQ_PASS)
+        parameters = pika.ConnectionParameters(RABBITMQ_HOST, 5672, '/', credentials)
+        parameters.heartbeat = 60
+        
+        connection = pika.BlockingConnection(parameters)
+        channel = connection.channel()
+
+        channel.exchange_declare(exchange=EXCHANGE_NAME, exchange_type='topic', durable=True)
+        channel.queue_declare(queue=QUEUE_NAME, durable=True)
+        channel.queue_bind(exchange=EXCHANGE_NAME, queue=QUEUE_NAME, routing_key='market.eod.*')
+
+        channel.basic_qos(prefetch_count=1)
+        channel.basic_consume(queue=QUEUE_NAME, on_message_callback=process_message)
+
+        logging.info("📈 Swing Agent Worker v2.2 started.")
+        logging.info(f"   Listening on queue: {QUEUE_NAME} (EOD topics)")
         channel.start_consuming()
-    except KeyboardInterrupt:
-        logging.info("Agent shutting down...")
-        channel.stop_consuming()
-        connection.close()
+    except Exception as e:
+        logging.error(f"Worker crashed: {e}")
+        time.sleep(10) # Auto-restart delay
 
 
 if __name__ == "__main__":
-    start_swing_agent()
+    while True:
+        try:
+            start_swing_agent()
+        except KeyboardInterrupt:
+            logging.info("Shutting down worker...")
+            break
+        except Exception:
+            logging.info("Worker restarted due to unexpected connection drop.")

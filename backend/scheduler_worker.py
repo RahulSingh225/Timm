@@ -90,6 +90,12 @@ JOB_REGISTRY = {
         "cron": {"day": "1", "hour": "6", "minute": "0"},
         "category": "producer",
     },
+    "daily_report": {
+        "script": "daily_report_generator.py",
+        "description": "Daily Intelligence Report",
+        "cron": {"hour": "16", "minute": "30", "day_of_week": "mon-fri"},
+        "category": "agent",
+    },
 }
 
 # ─── In-memory run tracking ────────────────────────────────────

@@ -408,7 +408,7 @@ def process_message(ch, method, properties, body):
         
     except Exception as e:
         logging.error(f"Screening failed for message: {e}")
-        ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
+        ch.basic_ack(delivery_tag=method.delivery_tag)  # Don't requeue — prevents infinite loops
 
 
 def start_screener_agent():

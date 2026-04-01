@@ -34,7 +34,7 @@ def process_message(ch, method, properties, body):
     
     if not conn:
         # DB connection failure should requeue so we try when DB is back
-        ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
+        ch.basic_ack(delivery_tag=method.delivery_tag)  # Don't requeue — prevents infinite loops
         return
 
     try:

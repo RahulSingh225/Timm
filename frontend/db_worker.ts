@@ -13,7 +13,20 @@ async function startDatabaseWorker() {
     try {
         console.log(`[DB WORKER] Connecting to RabbitMQ at ${RABBITMQ_URL}...`);
         const connection = await amqp.connect(RABBITMQ_URL);
+        
+        // Handle connection errors/closures
+        connection.on('error', (err) => {
+            console.error('[DB WORKER] RabbitMQ connection error:', err);
+        });
+        connection.on('close', () => {
+            console.warn('[DB WORKER] RabbitMQ connection closed. Reconnecting in 5s...');
+            setTimeout(startDatabaseWorker, 5000);
+        });
+
         const channel = await connection.createChannel();
+        channel.on('error', (err) => {
+            console.error('[DB WORKER] RabbitMQ channel error:', err);
+        });
 
         console.log(`[DB WORKER] Connected. Setting up exchange and queues...`);
         await channel.assertExchange(EXCHANGE_NAME, 'topic', { durable: true });
@@ -37,15 +50,14 @@ async function startDatabaseWorker() {
                         signalType: alertData.signal_type || alertData.signalType || 'NEUTRAL',
                         closePrice: alertData.close_price ? Math.round(Number(alertData.close_price)) : null,
                         signals: alertData.signals || [],
-                        summary: alertData.brief || null, // Might be empty until Gemini updates it, 
-                        // or Head Analyst can be updated to send its brief here
+                        summary: alertData.brief || null, 
                     });
 
                     console.log(`[DB WORKER] Successfully saved alert for ${alertData.symbol} to database.`);
                     channel.ack(msg);
                 } catch (dbError) {
                     console.error('[DB WORKER] Failed to save to database:', dbError);
-                    // depending on policy, you could nack, but we don't want to block the queue endlessly for bad JSON
+                    // nack and don't requeue if it's a parsing error or schema mismatch to avoid poison messages
                     channel.nack(msg, false, false);
                 }
             }
@@ -53,6 +65,8 @@ async function startDatabaseWorker() {
 
     } catch (error) {
         console.error('[DB WORKER] Error setting up worker:', error);
+        console.log('[DB WORKER] Retrying in 5s...');
+        setTimeout(startDatabaseWorker, 5000);
     }
 }
 

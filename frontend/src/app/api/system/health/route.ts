@@ -66,7 +66,6 @@ export async function GET() {
         const rmqStart = Date.now();
         const RABBITMQ_URL = process.env.RABBITMQ_URL as string;
         rmqConnection = await amqp.connect(RABBITMQ_URL);
-        const channel = await rmqConnection.createChannel();
         const rmqLatency = Date.now() - rmqStart;
 
         // Check key queues
@@ -79,13 +78,20 @@ export async function GET() {
 
         const queues = [];
         for (const qName of queueNames) {
+            let tempChannel: any = null;
             try {
-                const qInfo = await channel.checkQueue(qName);
+                // Create a temporary channel for each check to avoid killing the main connection
+                tempChannel = await rmqConnection.createChannel();
+                // Avoid uncaught exceptions if the channel closes due to 404
+                tempChannel.on('error', () => {}); 
+                
+                const qInfo = await tempChannel.checkQueue(qName);
                 queues.push({
                     name: qName,
                     messageCount: qInfo.messageCount,
                     consumerCount: qInfo.consumerCount,
                 });
+                await tempChannel.close();
             } catch {
                 // Queue may not exist yet — that's fine
                 queues.push({
@@ -93,10 +99,11 @@ export async function GET() {
                     messageCount: -1,
                     consumerCount: 0,
                 });
+                // No need to close tempChannel here as it's likely already closed by RabbitMQ on error
             }
         }
 
-        await channel.close();
+
         
         health.rabbitmq = {
             status: 'connected',

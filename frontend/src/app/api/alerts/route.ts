@@ -14,7 +14,10 @@ export async function GET(req: NextRequest) {
                 // Connect to your RabbitMQ container via env vars
                 const RABBITMQ_URL = process.env.RABBITMQ_URL as string;
                 connection = await amqp.connect(RABBITMQ_URL);
+                connection.on('error', (err: any) => console.error('[SSE API] Connection Error:', err));
+                
                 channel = await connection.createChannel();
+                channel.on('error', (err: any) => console.error('[SSE API] Channel Error:', err));
 
                 const exchange = 'market_data_exchange';
                 await channel.assertExchange(exchange, 'topic', { durable: true });

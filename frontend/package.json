@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "db-worker": "tsx db_worker.ts"
   },
   "dependencies": {
     "amqplib": "^0.10.9",

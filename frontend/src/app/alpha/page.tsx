@@ -8,12 +8,13 @@ import {
   TrendingUp, 
   TrendingDown, 
   ShieldCheck, 
-  History,
-  Rocket,
-  AlertTriangle,
-  Lightbulb
+  History, 
+  Rocket, 
+  AlertTriangle, 
+  Lightbulb,
+  Activity
 } from 'lucide-react';
-import Navigation from '@/components/Navigation';
+import { Navigation } from '@/components/Navigation';
 
 interface Setup {
   symbol: string;
@@ -203,7 +204,7 @@ export default function AlphaCenter() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {optionsSetups.length === 0 && (
                   <div className="col-span-2 bg-neutral-900/30 border border-neutral-800 border-dashed rounded-2xl p-12 text-center text-neutral-600">
-                    No options setups found with <₹50 premium risk.
+                    No options setups found with &lt;₹50 premium risk.
                   </div>
                 )}
                 {optionsSetups.map((setup: Setup) => (

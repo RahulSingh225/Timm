@@ -31,7 +31,7 @@ gym
 torch
 torchvision
 torchaudio
-orch-geometric
+torch-geometric
 torch-scatter
 torch-sparse
 torch-cluster

@@ -61,20 +61,9 @@ services:
     env_file:
       - .env
 
-  # VECTOR AGENT (Linear Regression Engine)
-  candle_vector_agent:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    container_name: candle_vector_agent
-    restart: always
-    command: ["python", "candle_vector_agent.py"]
-    # depends_on:
-    #   - rabbitmq
-    env_file:
-      - .env
-
-  # # SCRAPER: NSE FLOWS
+63: 
+64:   # SCHEDULER (APScheduler Cron Manager)
+65:   scheduler_worker:
   # nse_flows_scraper:
   #   build:
   #     context: ./backend

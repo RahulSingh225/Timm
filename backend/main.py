@@ -62,21 +62,26 @@ def read_root():
 @app.get("/workers")
 def get_workers():
     status = {}
-    for worker_id, filename in workers_registry.items():
+    # Use a copy of keys to avoid RuntimeError if we pop items during iteration
+    for worker_id, filename in list(workers_registry.items()):
         proc = active_processes.get(worker_id)
         is_alive = False
         if proc:
-            # Check if process crashed or finished
-            if proc.poll() is None:
-                is_alive = True
-            else:
-                # Remove it if it died
-                active_processes.pop(worker_id)
+            try:
+                # Check if process is still running
+                if proc.poll() is None:
+                    is_alive = True
+                else:
+                    # Remove it if it finished/crashed
+                    active_processes.pop(worker_id, None)
+            except Exception as e:
+                logging.error(f"Error checking status for {worker_id}: {e}")
+                active_processes.pop(worker_id, None)
         
         status[worker_id] = {
             "name": filename,
             "status": "RUNNING" if is_alive else "STOPPED",
-            "pid": proc.pid if is_alive else None
+            "pid": proc.pid if (proc and is_alive) else None
         }
     return status
 

@@ -61,9 +61,9 @@ services:
     env_file:
       - .env
 
-63: 
-64:   # SCHEDULER (APScheduler Cron Manager)
-65:   scheduler_worker:
+# 63: 
+# 64:   # SCHEDULER (APScheduler Cron Manager)
+# 65:   #scheduler_worker:
   # nse_flows_scraper:
   #   build:
   #     context: ./backend

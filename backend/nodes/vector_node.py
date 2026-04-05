@@ -43,7 +43,16 @@ def vector_analysis_node(state: dict) -> dict:
 
     for i, symbol in enumerate(watchlist):
         try:
-            yf_symbol = f"{symbol}.NS"
+            # Handle Yahoo Finance symbol mappings (Indices vs Stocks)
+            if symbol == "NIFTY":
+                yf_symbol = "^NSEI"
+            elif symbol == "BANKNIFTY":
+                yf_symbol = "^NSEBANK"
+            elif symbol == "SENSEX":
+                yf_symbol = "^BSESN"
+            else:
+                yf_symbol = f"{symbol}.NS"
+
             ticker = yf.Ticker(yf_symbol)
             df = ticker.history(period="3mo", interval="1d")
 

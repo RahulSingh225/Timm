@@ -42,7 +42,16 @@ def swing_ta_node(state: dict) -> dict:
         logging.info(f"  [{i + 1}/{len(watchlist)}] {symbol}...")
 
         try:
-            yf_symbol = f"{symbol}.NS"
+            # Handle Yahoo Finance symbol mappings (Indices vs Stocks)
+            if symbol == "NIFTY":
+                yf_symbol = "^NSEI"
+            elif symbol == "BANKNIFTY":
+                yf_symbol = "^NSEBANK"
+            elif symbol == "SENSEX":
+                yf_symbol = "^BSESN"
+            else:
+                yf_symbol = f"{symbol}.NS"
+
             ticker = yf.Ticker(yf_symbol)
             df = ticker.history(period="1y", interval="1d")
 

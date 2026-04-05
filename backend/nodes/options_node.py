@@ -68,7 +68,15 @@ def options_analysis_node(state: dict) -> dict:
                 current_price = swing["close_price"]
             else:
                 # Fetch price if not in swing analyses (e.g., index symbols)
-                yf_symbol = f"{symbol}.NS"
+                if symbol == "NIFTY":
+                    yf_symbol = "^NSEI"
+                elif symbol == "BANKNIFTY":
+                    yf_symbol = "^NSEBANK"
+                elif symbol == "SENSEX":
+                    yf_symbol = "^BSESN"
+                else:
+                    yf_symbol = f"{symbol}.NS"
+
                 ticker = yf.Ticker(yf_symbol)
                 hist = ticker.history(period="5d")
                 if hist.empty:

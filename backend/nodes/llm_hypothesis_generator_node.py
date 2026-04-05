@@ -11,11 +11,16 @@ import logging
 from datetime import datetime
 from typing import List, Dict
 from langchain_community.llms import Ollama  # or your existing Qwen setup
-from ..state import TimmState
-from ..database import SessionLocal
-from sqlalchemy import text
+import psycopg2
+from langgraph_state import TradingState
 
 logger = logging.getLogger(__name__)
+
+DB_URL = os.getenv("DATABASE_URL")
+
+def _get_conn():
+    return psycopg2.connect(DB_URL)
+
 
 # Configure your local Qwen2.5 Coder 14B
 llm = Ollama(
@@ -25,16 +30,24 @@ llm = Ollama(
     base_url="http://localhost:11434"  # adjust if needed
 )
 
-def generate_hypotheses(state: TimmState, num_hypotheses: int = 8) -> List[Dict]:
+def generate_hypotheses(state: TradingState, num_hypotheses: int = 8) -> List[Dict]:
     """Use Qwen to generate fresh strategy hypotheses"""
     
     # Pull recent context from your DB / state
-    with SessionLocal() as db:
-        recent = db.execute(text("""
+    try:
+        conn = _get_conn()
+        cur = conn.cursor()
+        cur.execute("""
             SELECT expression, fitness, generated_at 
             FROM evolved_strategies 
             ORDER BY generated_at DESC LIMIT 15
-        """)).fetchall()
+        """)
+        recent = cur.fetchall()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        logger.warning(f"Could not load recent strategies: {e}")
+        recent = []
     
     recent_strats = "\n".join([f"- {r[0]} (Sharpe: {r[1].get('sharpe',0):.2f})" for r in recent]) if recent else "No previous strategies yet."
 
@@ -80,7 +93,7 @@ Output ONLY valid JSON array:
         return []
 
 
-def llm_hypothesis_generator_node(state: TimmState) -> TimmState:
+def llm_hypothesis_generator_node(state: TradingState) -> TradingState:
     """
     Main LangGraph node.
     Run this BEFORE evolutionary_optimizer_node in your graph.
@@ -93,16 +106,28 @@ def llm_hypothesis_generator_node(state: TimmState) -> TimmState:
     state.llm_generated_hypotheses = new_hypotheses
     
     # Optional: persist to DB for RAG and historical analysis
-    with SessionLocal() as db:
+    try:
+        conn = _get_conn()
+        cur = conn.cursor()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS llm_hypotheses (
+                hypothesis_id VARCHAR(255) PRIMARY KEY,
+                name VARCHAR(255),
+                description TEXT,
+                logic TEXT,
+                generated_at TIMESTAMP
+            )
+        """)
         for hyp in new_hypotheses:
-            db.execute(text("""
+            cur.execute("""
                 INSERT INTO llm_hypotheses (hypothesis_id, name, description, logic, generated_at)
-                VALUES (:hypothesis_id, :name, :description, :logic, :generated_at)
-            """), {
-                **hyp,
-                "generated_at": datetime.utcnow().isoformat()
-            })
-        db.commit()
+                VALUES (%s, %s, %s, %s, %s)
+            """, (str(hyp.get("hypothesis_id", "")), str(hyp.get("name", "")), str(hyp.get("description", "")), str(hyp.get("logic", "")), datetime.utcnow()))
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        logger.error(f"Failed to insert hypothesis to db: {e}")
 
     logger.info(f"✅ Injected {len(new_hypotheses)} LLM hypotheses into evolution pipeline.")
     return state

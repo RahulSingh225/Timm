@@ -43,4 +43,15 @@ I restructured the LangGraph engine into a true debate framework:
 When a simulated trade loses money, the system learns from its mistakes:
 - The **Self Learning Node** intercepts the failed trades.
 - It asks the primary LLM to extract the exact technical trap into a 2-sentence **Lessons Learned** summary (`lessons_learned.json`).
-- EVERY morning, the **Temporal Context Node** loads these lessons and explicitly injects them into the **Judge Node**'s system prompt (e.g., "Do not buy breakouts when OBV is down based on yesterday's lesson"). The Judge explicitly considers these historical text lessons when evaluating the Critic's debate!
+- EVERY morning, the **Temporal Context Node** loads these lessons and explicitly injects them into the **Head Analyst Node**'s system prompt (e.g., "Do not buy breakouts when OBV is down based on yesterday's lesson"). The Analyst explicitly explicitly uses these to warn you about similar setups.
+
+## 7. The ML Training Subgraph (Offline Orchestrator)
+You have equipped the platform with state-of-the-art quantitative deep learning models. Because algorithms like PPO (Proximal Policy Optimization) and NEAT (Neuroevolution of Augmenting Topologies) take hours to run, I successfully mapped them to their own dedicated execution graph: `build_training_graph()`.
+This runs completely decoupled from your fast, daily Pre-Market graph.
+
+The training flow acts as an intense strategy research pipeline:
+1. **LLM Hypothesis Generator:** `qwen2.5-coder` creates hypothetical mathematical formulas based on current FII/DII data and sector strength.
+2. **Evolutionary Optimizer (GP):** Takes those hypotheses and uses symbolic regression to evolve math strategies over 5,000 candles.
+3. **NEAT Neuroevolution:** Mutates neural network topologies to map your candle_vector scalars directly to P&L actions.
+4. **MARL (Multi-Agent RL):** Trains independent intelligent agents using PPO in a custom `trading_env.py` to cooperatively trade the NIFTY index and size positions.
+5. **Sector GNN:** Runs a Graph Attention Network across 10 sectors (NIFTY, BANK, IT, etc.) to accurately predict macro sector rotation regimes.

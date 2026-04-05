@@ -14,13 +14,17 @@ from typing import Dict, Any, List
 from deap import base, creator, tools, algorithms, gp
 import numpy as np
 import pandas as pd
-from sqlalchemy import text  # or your existing DB session
+import psycopg2
 
-# Assuming your LangGraph state and DB are in the same project
-from ..state import TimmState  # ← adjust import to your actual State class
-from ..database import SessionLocal  # your PostgreSQL session
+from langgraph_state import TradingState
 
 logger = logging.getLogger(__name__)
+
+DB_URL = os.getenv("DATABASE_URL")
+
+def _get_conn():
+    return psycopg2.connect(DB_URL)
+
 
 # ========================= CONFIG =========================
 POPULATION_SIZE = 200
@@ -100,7 +104,7 @@ def evaluate_strategy(individual, historical_df: pd.DataFrame) -> tuple:
     
     return (sharpe, -max_dd, win_rate, profit_factor)
 
-def evolutionary_optimizer_node(state: TimmState) -> TimmState:
+def evolutionary_optimizer_node(state: TradingState) -> TradingState:
     """
     Main LangGraph node.
     Called by the main graph (e.g. every night or via trigger).
@@ -108,15 +112,20 @@ def evolutionary_optimizer_node(state: TimmState) -> TimmState:
     logger.info("🚀 Starting Genetic Programming Evolution Cycle...")
 
     # 1. Load recent historical data enriched with candle_vector signals
-    with SessionLocal() as db:
-        df = pd.read_sql(text("""
+    try:
+        conn = _get_conn()
+        df = pd.read_sql("""
             SELECT timestamp, candle_scalar, iv_adjusted_scalar, rsi, volume_zscore,
                    nifty_returns, close
             FROM candle_vector_signals
             WHERE symbol = 'NIFTY'
             ORDER BY timestamp DESC
             LIMIT 5000
-        """), db.bind)
+        """, conn)
+        conn.close()
+    except Exception as e:
+        logger.error(f"Failed to fetch data for evolution: {e}")
+        df = pd.DataFrame()
     
     if len(df) < 500:
         logger.warning("Not enough historical data for evolution")
@@ -170,13 +179,30 @@ def evolutionary_optimizer_node(state: TimmState) -> TimmState:
     state.evolved_strategies = best_strategies
     
     # Optional: persist to DB for RAG
-    with SessionLocal() as db:
+    try:
+        conn = _get_conn()
+        cur = conn.cursor()
+        
+        # Ensure table exists
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS evolved_strategies (
+                strategy_id VARCHAR(255) PRIMARY KEY,
+                expression TEXT,
+                fitness JSONB,
+                generated_at TIMESTAMP
+            )
+        """)
+        
         for strat in best_strategies:
-            db.execute(text("""
+            cur.execute("""
                 INSERT INTO evolved_strategies (strategy_id, expression, fitness, generated_at)
-                VALUES (:strategy_id, :expression, :fitness, :generated_at)
-            """), strat)
-        db.commit()
+                VALUES (%s, %s, %s, %s)
+            """, (strat["strategy_id"], strat["expression"], json.dumps(strat["fitness"]), strat["generated_at"]))
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        logger.error(f"Failed to persist evolved strategies to DB: {e}")
 
     logger.info(f"✅ Evolution complete. Found {len(best_strategies)} strong strategies.")
     return state

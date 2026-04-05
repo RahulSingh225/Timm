@@ -28,6 +28,13 @@ from nodes.head_analyst_node import head_analyst_node
 from nodes.eod_review_node import eod_review_node
 from nodes.self_learning_node import self_learning_node
 
+# New ML Agents
+from nodes.evolutionary_optimizer_node import evolutionary_optimizer_node
+from nodes.neat_neuroevolution_node import neat_neuroevolution_node
+from nodes.llm_hypothesis_generator_node import llm_hypothesis_generator_node
+from nodes.marl_training_subgraph import marl_training_subgraph
+from nodes.sector_gnn_node import sector_gnn_node
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - [GRAPH] - %(message)s')
 
 
@@ -95,12 +102,6 @@ def build_premarket_graph():
     # ── Edges: Converge to LLM synthesis ──
     graph.add_edge("intraday_builder", "head_analyst")
     graph.add_edge("options_builder", "head_analyst")
-    graph.add_node("evolutionary_optimizer", evolutionary_optimizer_node)
-    graph.add_node("neat_neuroevolution", neat_neuroevolution_node)
-    graph.add_edge("llm_hypothesis_generator", "neat_neuroevolution")
-    graph.add_node("marl_training", marl_training_subgraph)
-    graph.add_node("sector_gnn", sector_gnn_node)
-    graph.add_edge("marl_training", "sector_gnn")
     graph.add_edge("head_analyst", END)
 
     compiled = graph.compile()
@@ -132,4 +133,33 @@ def build_eod_graph():
 
     compiled = graph.compile()
     logging.info("✅ EOD graph compiled successfully")
+    return compiled
+
+
+def build_training_graph():
+    """
+    Build the asynchronous/offline Training graph for ML optimization.
+
+    Flow:
+      llm_hypothesis_generator → evolutionary_optimizer → neat_neuroevolution → marl_training → sector_gnn → END
+    """
+    logging.info("Building ML Training graph...")
+
+    graph = StateGraph(TradingState)
+
+    graph.add_node("llm_hypothesis_generator", llm_hypothesis_generator_node)
+    graph.add_node("evolutionary_optimizer", evolutionary_optimizer_node)
+    graph.add_node("neat_neuroevolution", neat_neuroevolution_node)
+    graph.add_node("marl_training", marl_training_subgraph)
+    graph.add_node("sector_gnn", sector_gnn_node)
+
+    graph.set_entry_point("llm_hypothesis_generator")
+    graph.add_edge("llm_hypothesis_generator", "evolutionary_optimizer")
+    graph.add_edge("evolutionary_optimizer", "neat_neuroevolution")
+    graph.add_edge("neat_neuroevolution", "marl_training")
+    graph.add_edge("marl_training", "sector_gnn")
+    graph.add_edge("sector_gnn", END)
+
+    compiled = graph.compile()
+    logging.info("✅ ML Training graph compiled successfully")
     return compiled

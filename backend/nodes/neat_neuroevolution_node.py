@@ -12,14 +12,18 @@ from datetime import datetime
 from typing import Dict, Any
 import numpy as np
 import pandas as pd
-from sqlalchemy import text
-
 import neat
+import psycopg2
 
-from ..state import TimmState
-from ..database import SessionLocal
+from langgraph_state import TradingState
 
 logger = logging.getLogger(__name__)
+
+DB_URL = os.getenv("DATABASE_URL")
+
+def _get_conn():
+    return psycopg2.connect(DB_URL)
+
 
 # ========================= CONFIG =========================
 GENERATIONS = 80          # Increase slowly as your hardware allows
@@ -33,8 +37,9 @@ NUM_OUTPUTS = 3  # e.g., [long_prob, short_prob, hold_prob] or position sizing
 
 def load_training_data() -> pd.DataFrame:
     """Load enriched data from your existing candle_vector_signals table"""
-    with SessionLocal() as db:
-        df = pd.read_sql(text("""
+    try:
+        conn = _get_conn()
+        df = pd.read_sql("""
             SELECT 
                 timestamp,
                 candle_scalar,
@@ -49,8 +54,12 @@ def load_training_data() -> pd.DataFrame:
             WHERE symbol = 'NIFTY'
             ORDER BY timestamp ASC
             LIMIT 8000
-        """), db.bind)
-    return df
+        """, conn)
+        conn.close()
+        return df
+    except Exception as e:
+        logger.error(f"Failed to load training data for NEAT: {e}")
+        return pd.DataFrame()
 
 def eval_genomes(genomes, config):
     """Fitness function for each evolved network"""
@@ -91,7 +100,7 @@ def eval_genomes(genomes, config):
         # Multi-objective fitness (you can expand this)
         genome.fitness = sharpe * (1 + total_return) - 5 * max_dd
 
-def neat_neuroevolution_node(state: TimmState) -> TimmState:
+def neat_neuroevolution_node(state: TradingState) -> TradingState:
     """Main LangGraph node"""
     logger.info("🧬 Starting NEAT Neuroevolution Cycle...")
 

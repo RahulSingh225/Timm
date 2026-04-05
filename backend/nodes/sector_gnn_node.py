@@ -15,12 +15,16 @@ import pandas as pd
 import numpy as np
 from torch_geometric.nn import GATConv, global_mean_pool
 from torch_geometric.data import Data
-from sqlalchemy import text
-
-from ..state import TimmState
-from ..database import SessionLocal
+from langgraph_state import TradingState
+import psycopg2
 
 logger = logging.getLogger(__name__)
+
+DB_URL = os.getenv("DATABASE_URL")
+
+def _get_conn():
+    return psycopg2.connect(DB_URL)
+
 
 # ========================= CONFIG =========================
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # Will use your T4
@@ -46,14 +50,19 @@ class SectorGNN(torch.nn.Module):
 
 def build_sector_graph() -> Data:
     """Build dynamic graph from your database"""
-    with SessionLocal() as db:
+    try:
+        conn = _get_conn()
         # Example: Fetch sector-level aggregated data
-        df = pd.read_sql(text("""
+        df = pd.read_sql("""
             SELECT sector, avg_candle_scalar, avg_iv_adjusted, sentiment_score,
                    fii_flow, volume_zscore, correlation_to_nifty
             FROM sector_aggregates 
             WHERE date >= CURRENT_DATE - INTERVAL '30 days'
-        """), db.bind)
+        """, conn)
+        conn.close()
+    except Exception as e:
+        logger.error(f"Failed to fetch sector data for GNN: {e}")
+        df = pd.DataFrame()
     
     # Define sectors (NIFTY50 sectors)
     sectors = ['NIFTY', 'BANK', 'IT', 'AUTO', 'FMCG', 'PHARMA', 'ENERGY', 'METAL', 'REALTY', 'MEDIA']
@@ -85,7 +94,7 @@ def build_sector_graph() -> Data:
     
     return Data(x=x, edge_index=edge_index)
 
-def sector_gnn_node(state: TimmState) -> TimmState:
+def sector_gnn_node(state: TradingState) -> TradingState:
     logger.info("📊 Starting Sector GNN Training & Inference...")
 
     # Build graph

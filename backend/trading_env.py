@@ -3,8 +3,14 @@ import gym
 import numpy as np
 from gym import spaces
 import pandas as pd
-from sqlalchemy import text
-from ..database import SessionLocal
+import os
+import psycopg2
+
+DB_URL = os.getenv("DATABASE_URL")
+
+def _get_conn():
+    return psycopg2.connect(DB_URL)
+
 
 class NiftyMARLEnv(gym.Env):
     """Custom Multi-Agent RL Environment for NIFTY Intraday + Options"""
@@ -26,11 +32,17 @@ class NiftyMARLEnv(gym.Env):
         self.action_space = spaces.Discrete(5)  # 0=strong short, 1=short, 2=hold, 3=long, 4=strong long
 
     def _load_data(self):
-        with SessionLocal() as db:
-            return pd.read_sql(text("""
+        try:
+            conn = _get_conn()
+            df = pd.read_sql("""
                 SELECT * FROM candle_vector_signals 
                 WHERE symbol = 'NIFTY' ORDER BY timestamp ASC LIMIT 10000
-            """), db.bind)
+            """, conn)
+            conn.close()
+            return df
+        except Exception as e:
+            print(f"Failed to fetch MARL env data: {e}")
+            return pd.DataFrame()
 
     def reset(self):
         self.current_step = 0

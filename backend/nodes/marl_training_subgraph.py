@@ -11,11 +11,11 @@ import torch
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv
 from ..env.trading_env import NiftyMARLEnv
-from ..state import TimmState
+from langgraph_state import TradingState
 
 logger = logging.getLogger(__name__)
 
-def marl_training_subgraph(state: TimmState) -> TimmState:
+def marl_training_subgraph(state: TradingState) -> TradingState:
     logger.info("🤖 Starting MARL Training Subgraph (PPO Multi-Agent)...")
 
     # Load latest data enriched with all previous signals

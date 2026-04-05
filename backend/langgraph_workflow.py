@@ -24,6 +24,8 @@ from nodes.vector_node import vector_analysis_node
 from nodes.screener_node import screener_node
 from nodes.intraday_builder_node import intraday_builder_node
 from nodes.options_builder_node import options_builder_node
+from nodes.adversarial_critic_node import adversarial_critic_node
+from nodes.judge_node import judge_node
 from nodes.head_analyst_node import head_analyst_node
 from nodes.eod_review_node import eod_review_node
 from nodes.self_learning_node import self_learning_node
@@ -68,6 +70,8 @@ def build_premarket_graph():
     graph.add_node("screener", screener_node)
     graph.add_node("intraday_builder", intraday_builder_node)
     graph.add_node("options_builder", options_builder_node)
+    graph.add_node("adversarial_critic", adversarial_critic_node)
+    graph.add_node("judge", judge_node)
     graph.add_node("head_analyst", head_analyst_node)
 
     # ── Edges: Phase 1 sequential context loading ──
@@ -90,10 +94,17 @@ def build_premarket_graph():
 
     # ── Edges: Split to trade builders ──
     graph.add_edge("screener", "intraday_builder")
-    graph.add_edge("intraday_builder", "options_builder")
+    graph.add_edge("screener", "options_builder")
+
+    # ── Edges: Builders to Critic ──
+    graph.add_edge("intraday_builder", "adversarial_critic")
+    graph.add_edge("options_builder", "adversarial_critic")
+
+    # ── Edges: Critic to Judge ──
+    graph.add_edge("adversarial_critic", "judge")
 
     # ── Edges: Converge to LLM synthesis ──
-    graph.add_edge("options_builder", "head_analyst")
+    graph.add_edge("judge", "head_analyst")
     graph.add_edge("head_analyst", END)
 
     compiled = graph.compile()

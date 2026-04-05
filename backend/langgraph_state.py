@@ -26,6 +26,7 @@ class TradingState(TypedDict, total=False):
     report_date: str                        # YYYY-MM-DD
     market_regime: str                      # RISK_ON / RISK_OFF / NEUTRAL
     vix: Optional[float]
+    defense_mode: bool                      # If VIX > 30 and SPY < 200 SMA -> TRUE
     fii_net: Optional[str]                  # e.g., "+2340 Cr"
     dii_net: Optional[str]
     global_cues: dict                       # Full global context blob
@@ -35,6 +36,7 @@ class TradingState(TypedDict, total=False):
     # ── Phase 1: Temporal Context (from learning_history) ────
     strategy_weights: dict                  # {signal_type: {weight, win_rate, sample_size}}
     recent_performance: dict                # {regime_tradetype: {win_rate, avg_win, avg_loss}}
+    lessons_learned: list[dict]             # Extracted from Auto-Reflection EOD runs
 
     # ── Phase 1: Per-Symbol Analysis ─────────────────────────
     swing_analyses: dict                    # {symbol: swing_report_dict}
@@ -44,6 +46,7 @@ class TradingState(TypedDict, total=False):
     # ── Phase 2: Trade Setups ────────────────────────────────
     intraday_setups: list[dict]             # Equity LONG/SHORT setups
     options_setups: list[dict]              # Options CALL/PUT scalp setups
+    critic_debate: list[dict]               # Critic's arguments against setups
     all_evidence: Annotated[list[dict], add]  # Evidence chain from every node
 
     # ── Phase 2: LLM Synthesis ───────────────────────────────

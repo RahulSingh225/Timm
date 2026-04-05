@@ -62,14 +62,16 @@ def swing_ta_node(state: dict) -> dict:
                 end_date_str = (td + timedelta(days=1)).strftime("%Y-%m-%d")
                 start_date_str = (td - timedelta(days=365)).strftime("%Y-%m-%d")
                 df = ticker.history(start=start_date_str, end=end_date_str, interval="1d")
+                df_wk = ticker.history(start=start_date_str, end=end_date_str, interval="1wk")
             else:
                 df = ticker.history(period="1y", interval="1d")
+                df_wk = ticker.history(period="1y", interval="1wk")
 
             if df.empty or len(df) < 200:
                 logging.warning(f"    ⚠️ {symbol}: Insufficient data ({len(df)} candles, need 200+)")
                 continue
 
-            report = analyze_swing_setups(df, symbol)
+            report = analyze_swing_setups(df, symbol, weekly_df=df_wk)
 
             if report:
                 analyses[symbol] = report

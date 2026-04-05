@@ -25,5 +25,22 @@ Because the backend dependencies (like `psycopg2` and LangGraph) are housed insi
 docker compose exec backend python simulate_graph.py --start-date 2022-01-01 --end-date 2024-04-05
 ```
 
-> [!TIP]
-> The orchestrator auto-executes setups with **>75% confidence**, evaluates them against the $T+1$ closing price, and increments the `simulated` strategy weights continuously! You can watch the system evolving in real-time.
+## 4. Advanced Indicators & Market Context
+The Swing Analysis node now utilizes `pandas-ta` to compute advanced momentum and risk indicators:
+- **ATR:** Dynamically sizes Stop-Loss and Targets based on rolling volatility.
+- **ADX & VWAP:** Determines the strength of the trend vs institutional benchmarks.
+- **OBV:** Detects bullish/bearish divergence where price action contradicts smart money flow.
+- **MTFC:** The node assesses Weekly chart data behind the scenes to verify the macro trend aligns.
+- **SPY 200-SMA Defense Mode:** The `global_cues_node` now tracks SPY's distance from its 200 SMA. If VIX spikes > 30 and SPY is below the 200 SMA, the system triggers `defense_mode`, aggressively halving position sizes.
+
+## 5. Primary vs Critic vs Judge (Agent Debate Architecture)
+I restructured the LangGraph engine into a true debate framework:
+- **Primary Agent (`intraday_builder`):** Scans the indicators and builds a bullish/bearish trade plan.
+- **Adversarial Critic (`llama3.1:8b`):** Reads the Primary Agent's trade plan and is strictly prompted to find flaws, counter-arguments, and hidden risks in the technical structure.
+- **The Judge (`qwen2.5-coder:14b`):** The final arbiter. Reads the Primary Agent's evidence, the Critic's argument, and the current Market Regime. It outputs a final JSON decision (`APPROVED`, `REJECTED`, or `MODIFIED_TO_SCALP`).
+
+## 6. Auto-Reflection Memory Injection
+When a simulated trade loses money, the system learns from its mistakes:
+- The **Self Learning Node** intercepts the failed trades.
+- It asks the primary LLM to extract the exact technical trap into a 2-sentence **Lessons Learned** summary (`lessons_learned.json`).
+- EVERY morning, the **Temporal Context Node** loads these lessons and explicitly injects them into the **Judge Node**'s system prompt (e.g., "Do not buy breakouts when OBV is down based on yesterday's lesson"). The Judge explicitly considers these historical text lessons when evaluating the Critic's debate!

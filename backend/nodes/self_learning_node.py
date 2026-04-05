@@ -20,8 +20,12 @@ from dotenv import load_dotenv
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - [NODE:SELF_LEARN] - %(message)s')
-
 DB_URL = os.getenv("DATABASE_URL")
+OPENAI_API_BASE = os.getenv("OPENAI_API_BASE", "http://localhost:11434/v1")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "ollama")
+LEARNING_MODEL = os.getenv("LEARNING_MODEL", "qwen2.5-coder:14b")
+
+LESSONS_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "lessons_learned.json")
 
 # Same patterns as screener_node
 SIGNAL_TYPE_PATTERNS = {
@@ -184,6 +188,51 @@ def self_learning_node(state: dict) -> dict:
                     "trade_type": trade_type,
                     "market_regime": market_regime,
                 })
+
+        # ── AUTO-REFLECTION LLM ────────────────────────────────
+        failed_trades = [r for r in eod_results if not r.get("was_correct")]
+        if failed_trades:
+            try:
+                from openai import OpenAI
+                import json
+                client = OpenAI(base_url=OPENAI_API_BASE, api_key=OPENAI_API_KEY)
+
+                lessons = []
+                # Load existing
+                if os.path.exists(LESSONS_FILE):
+                    with open(LESSONS_FILE, "r") as f:
+                        lessons = json.load(f)
+
+                prompt = f"Analyze these {len(failed_trades)} failed trades from today ({report_date}).\n"
+                for i, ft in enumerate(failed_trades[:5]):
+                    prompt += f"{i+1}. Predicted: {ft.get('predicted_direction')}, PNL: {ft.get('actual_pnl_pct')}%, Regime: {market_regime}, Signals: {ft.get('signals_used')}\n"
+                
+                prompt += "Provide a single, very brief 2-sentence lesson learned on what technical or regime factor trapped the system today."
+
+                response = client.chat.completions.create(
+                    model=LEARNING_MODEL,
+                    messages=[
+                        {"role": "system", "content": "You are an AI Trading System's self-reflection module."},
+                        {"role": "user", "content": prompt},
+                    ],
+                    temperature=0.3,
+                )
+                
+                lesson_text = response.choices[0].message.content.strip()
+                logging.info(f"    💡 Auto-Reflection Lesson: {lesson_text}")
+
+                lessons.append({
+                    "date": report_date,
+                    "regime": market_regime,
+                    "lesson": lesson_text
+                })
+
+                os.makedirs(os.path.dirname(LESSONS_FILE), exist_ok=True)
+                with open(LESSONS_FILE, "w") as f:
+                    json.dump(lessons[-10:], f, indent=2) # Keep last 10
+
+            except Exception as e:
+                logging.warning(f"  Auto-reflection failed: {e}")
 
         conn.commit()
 

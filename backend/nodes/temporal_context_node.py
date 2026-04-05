@@ -137,6 +137,18 @@ def temporal_context_node(state: dict) -> dict:
         else:
             logging.info("  learning_history table not found. First run — no historical context.")
 
+        # ── 3. Load Lessons Learned (from JSON) ───────────────
+        lessons_learned = []
+        lessons_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "lessons_learned.json")
+        if os.path.exists(lessons_file):
+            import json
+            try:
+                with open(lessons_file, "r") as f:
+                    lessons_learned = json.load(f)
+                logging.info(f"  Loaded {len(lessons_learned)} lessons learned from Auto-Reflection.")
+            except Exception as e:
+                logging.warning(f"  Failed to read lessons file: {e}")
+
         cur.close()
         conn.close()
 
@@ -146,9 +158,11 @@ def temporal_context_node(state: dict) -> dict:
         return {
             "strategy_weights": {},
             "recent_performance": {},
+            "lessons_learned": [],
         }
 
     return {
         "strategy_weights": weights,
         "recent_performance": recent,
+        "lessons_learned": lessons_learned,
     }

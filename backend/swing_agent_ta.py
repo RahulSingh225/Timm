@@ -68,7 +68,7 @@ def _find_swing_sr(df: pd.DataFrame, lookback: int = 20) -> dict:
     }
 
 
-def analyze_swing_setups(df: pd.DataFrame, symbol: str) -> dict | None:
+def analyze_swing_setups(df: pd.DataFrame, symbol: str, weekly_df: pd.DataFrame = None) -> dict | None:
     """
     Full structural analysis on daily OHLCV data.
     Returns a rich, structured report for downstream consumers.
@@ -102,6 +102,16 @@ def analyze_swing_setups(df: pd.DataFrame, symbol: str) -> dict | None:
     # ATR (14-day)
     df.ta.atr(length=14, append=True)
 
+    # ADX (14-day)
+    # pandas-ta adx returns ADX_14, DMP_14, DMN_14
+    df.ta.adx(length=14, append=True)
+
+    # OBV (On-Balance Volume)
+    df.ta.obv(append=True)
+
+    # VWAP
+    df.ta.vwap(append=True)
+
     # Volume SMA
     df['VOL_SMA_20'] = df['volume'].rolling(window=20).mean()
 
@@ -126,6 +136,14 @@ def analyze_swing_setups(df: pd.DataFrame, symbol: str) -> dict | None:
     else:
         daily_trend = "NEUTRAL"
 
+    adx = latest.get('ADX_14', 0)
+    if adx > 25:
+        daily_trend_strength = "STRONG"
+    elif adx < 20:
+        daily_trend_strength = "CHOPPY"
+    else:
+        daily_trend_strength = "WEAK"
+
     # Short-term micro-trend from 9/21 EMA
     if ema9 > ema21:
         micro_trend = "BULLISH"
@@ -133,6 +151,27 @@ def analyze_swing_setups(df: pd.DataFrame, symbol: str) -> dict | None:
         micro_trend = "BEARISH"
     else:
         micro_trend = "NEUTRAL"
+
+    # Multi-Timeframe Confluence (MTFC): Weekly Trend
+    weekly_trend = "NEUTRAL"
+    if weekly_df is not None and not weekly_df.empty and len(weekly_df) >= 50:
+        weekly_df.columns = [c.lower() for c in weekly_df.columns]
+        weekly_df.ta.ema(length=10, append=True)
+        weekly_df.ta.ema(length=40, append=True)
+        w_latest = weekly_df.iloc[-1]
+        w_ema10 = w_latest.get('EMA_10', w_latest['close'])
+        w_ema40 = w_latest.get('EMA_40', w_latest['close'])
+        
+        if w_latest['close'] > w_ema10 and w_ema10 > w_ema40:
+            weekly_trend = "BULLISH"
+        elif w_latest['close'] < w_ema10 and w_ema10 < w_ema40:
+            weekly_trend = "BEARISH"
+    
+    if weekly_trend != "NEUTRAL":
+        if weekly_trend == daily_trend:
+            signals.append(f"MTFC ALIGNMENT: Both Weekly and Daily are {weekly_trend}.")
+        else:
+            signals.append(f"MTFC CONFLICT: Weekly is {weekly_trend} but Daily is {daily_trend}.")
 
     # ──────────────────────────────────────────────────
     # 3. SIGNAL DETECTION
@@ -203,7 +242,7 @@ def analyze_swing_setups(df: pd.DataFrame, symbol: str) -> dict | None:
         if close > bb_upper and not pd.isna(bb_upper):
             signals.append(f"BB BREAKOUT: Price closed above upper band ₹{round(bb_upper, 2)} (Momentum).")
 
-    # F. Volume
+    # F. Volume & OBV
     vol_sma = latest.get('VOL_SMA_20', 0)
     if vol_sma and not pd.isna(vol_sma) and vol_sma > 0:
         vol_ratio = latest['volume'] / vol_sma
@@ -211,6 +250,20 @@ def analyze_swing_setups(df: pd.DataFrame, symbol: str) -> dict | None:
             signals.append(f"MASSIVE VOLUME: {round(vol_ratio, 1)}x average ({int(latest['volume']):,} vs avg {int(vol_sma):,}).")
         elif vol_ratio >= 1.5:
             signals.append(f"VOLUME SPIKE: {round(vol_ratio, 1)}x average.")
+
+    obv = latest.get('OBV', None)
+    if obv is not None:
+        # Simple OBV trend vs Price trend
+        obv_sma = df['OBV'].rolling(20).mean().iloc[-1]
+        if close > ema50 and obv < obv_sma:
+            signals.append("BEARISH DIVERGENCE: Price is bullish but OBV is declining (Smart money exiting).")
+        elif close < ema50 and obv > obv_sma:
+            signals.append("BULLISH DIVERGENCE: Price is bearish but OBV is rising (Smart money accumulating).")
+
+    vwap = latest.get('VWAP_D', None)
+    if vwap is not None and not pd.isna(vwap):
+        if prev['close'] < vwap and close > vwap:
+            signals.append(f"VWAP RECLAIM: Price crossed above VWAP {round(vwap, 2)}.")
 
     # ──────────────────────────────────────────────────
     # 4. SUPPORT / RESISTANCE
@@ -291,7 +344,9 @@ def analyze_swing_setups(df: pd.DataFrame, symbol: str) -> dict | None:
         "trend": {
             "daily": daily_trend,
             "micro": micro_trend,
-            "alignment": "STRONG" if daily_trend == micro_trend and daily_trend != "NEUTRAL" else "WEAK" if daily_trend != micro_trend else "FLAT",
+            "weekly": weekly_trend,
+            "strength": daily_trend_strength,
+            "alignment": "STRONG" if daily_trend == micro_trend and daily_trend == weekly_trend else "WEAK" if daily_trend != micro_trend else "FLAT",
         },
         "support_resistance": {
             **swing_sr,
@@ -306,6 +361,9 @@ def analyze_swing_setups(df: pd.DataFrame, symbol: str) -> dict | None:
             "rsi": round(rsi, 2) if not pd.isna(rsi) else None,
             "macd": round(macd_val, 4) if not pd.isna(macd_val) else None,
             "atr": round(atr, 2) if atr and not pd.isna(atr) else None,
+            "adx": round(adx, 2) if not pd.isna(adx) else None,
+            "obv": round(obv, 2) if obv and not pd.isna(obv) else None,
+            "vwap": round(vwap, 2) if vwap and not pd.isna(vwap) else None,
             "ema9": round(ema9, 2) if not pd.isna(ema9) else None,
             "ema21": round(ema21, 2) if not pd.isna(ema21) else None,
             "ema50": round(ema50, 2) if not pd.isna(ema50) else None,

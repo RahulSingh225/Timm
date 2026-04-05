@@ -13,6 +13,9 @@ RUN apt-get update && apt-get install -y \
     gcc \
     && rm -rf /var/lib/apt/lists/*
 
+# Install torch first as it's a build dependency for other packages
+RUN pip install --no-cache-dir torch torchvision torchaudio
+
 # Install Python requirements
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

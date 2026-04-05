@@ -28,9 +28,6 @@ sqlalchemy
 neat-python
 stable-baselines3
 gym
-torch
-torchvision
-torchaudio
 torch-geometric
 torch-scatter
 torch-sparse

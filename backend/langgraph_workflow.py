@@ -34,6 +34,7 @@ from nodes.neat_neuroevolution_node import neat_neuroevolution_node
 from nodes.llm_hypothesis_generator_node import llm_hypothesis_generator_node
 from nodes.marl_training_subgraph import marl_training_subgraph
 from nodes.sector_gnn_node import sector_gnn_node
+from nodes.options_gnn_node import options_gnn_node
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - [GRAPH] - %(message)s')
 
@@ -152,13 +153,15 @@ def build_training_graph():
     graph.add_node("neat_neuroevolution", neat_neuroevolution_node)
     graph.add_node("marl_training", marl_training_subgraph)
     graph.add_node("sector_gnn", sector_gnn_node)
+    graph.add_node("options_gnn", options_gnn_node)
 
     graph.set_entry_point("llm_hypothesis_generator")
     graph.add_edge("llm_hypothesis_generator", "evolutionary_optimizer")
     graph.add_edge("evolutionary_optimizer", "neat_neuroevolution")
     graph.add_edge("neat_neuroevolution", "marl_training")
     graph.add_edge("marl_training", "sector_gnn")
-    graph.add_edge("sector_gnn", END)
+    graph.add_edge("sector_gnn", "options_gnn")
+    graph.add_edge("options_gnn", END)
 
     compiled = graph.compile()
     logging.info("✅ ML Training graph compiled successfully")

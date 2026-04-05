@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Activity, MessageSquare, Target, LayoutDashboard, Radar, Briefcase, Bot, Zap, List } from 'lucide-react';
+import { Activity, MessageSquare, Target, LayoutDashboard, Radar, Briefcase, Bot, Zap, List, BrainCircuit } from 'lucide-react';
 
 const navItems = [
     { href: '/', label: 'Command Center', icon: LayoutDashboard },
@@ -13,6 +13,7 @@ const navItems = [
     { href: '/vectors', label: 'Vector Lab', icon: Target },
     { href: '/chat', label: 'AI Chat', icon: MessageSquare },
     { href: '/chat/vanilla', label: 'Vanilla Chat', icon: Bot },
+    { href: '/ml/overview', label: 'ML Desk', icon: BrainCircuit },
 ];
 
 export function Navigation() {

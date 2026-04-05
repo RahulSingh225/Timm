@@ -4040,6 +4040,15 @@ queue-microtask@^1.2.2:
   dependencies:
     scheduler "^0.27.0"
 
+react-force-graph-2d@^1.29.1:
+  version "1.29.1"
+  resolved "https://registry.npmjs.org/react-force-graph-2d/-/react-force-graph-2d-1.29.1.tgz"
+  integrity sha512-1Rl/1Z3xy2iTHKj6a0jRXGyiI86xUti81K+jBQZ+Oe46csaMikp47L5AjrzA9hY9fNGD63X8ffrqnvaORukCuQ==
+  dependencies:
+    force-graph "^1.51"
+    prop-types "15"
+    react-kapsule "^2.5"
+
 react-force-graph@^1.48.2:
   version "1.48.2"
   resolved "https://registry.npmjs.org/react-force-graph/-/react-force-graph-1.48.2.tgz"

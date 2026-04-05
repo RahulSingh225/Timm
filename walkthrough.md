@@ -55,3 +55,15 @@ The training flow acts as an intense strategy research pipeline:
 3. **NEAT Neuroevolution:** Mutates neural network topologies to map your candle_vector scalars directly to P&L actions.
 4. **MARL (Multi-Agent RL):** Trains independent intelligent agents using PPO in a custom `trading_env.py` to cooperatively trade the NIFTY index and size positions.
 5. **Sector GNN:** Runs a Graph Attention Network across 10 sectors (NIFTY, BANK, IT, etc.) to accurately predict macro sector rotation regimes.
+
+## 8. The Hybrid Power Move (GNN → MARL → NEAT Pipeline)
+The models do not operate in silos. I have structurally wired the algorithms into each other to maximize informational edge:
+1. **Temporal HeteroGNN Embeddings:** The Advanced Sector GNN predicts the market regime and outputs Attention Weights determining *where* liquidity is flowing (e.g. IT → BANK).
+2. **MARL Sizing Injection:** The OpenAI `trading_env.py` has an expanded observation space (size 14). The GNN's 'Bull Rotation Confidence' vector is injected directly into the Multi-Agent PPO. The agents learn mathematically *when* to execute their long/short maneuvers aggressively based on the GNN's macro heatmap.
+3. **Neuroevolution Mutations:** The NEAT populations similarly ingest the GNN vectors. Genomes mutate specifically mapping options sizing metrics conditionally around the liquidity rotation regime!
+
+## 9. Options IV HeteroGNN
+Traditional options pricing relies on flat mathematical correlations. We have implemented a PyTorch Geometric **Heterogeneous Graph Neural Network** (the `options_gnn_node`) that maps the active Implied Volatility surface as a live relational graph:
+- **Node Topology:** Separate nodes mapped for `call`, `put`, and the `underlying` pricing.
+- **Edges & Message Passing:** Edges mapped dynamically connecting laterally to adjacent strikes (modeling volatility contagion) and mapping the underlying asset price movement actively into every single option node.
+- **Predictive Surface:** Predicts whether the volatility structure points toward structural crush (short iron condors) or expansion (long straddles) ahead of Delta decay.

@@ -4,6 +4,7 @@ TIMM LangGraph Runner — CLI entry point for graph execution.
 Usage:
   python run_graph.py --phase premarket    # Run pre-market analysis
   python run_graph.py --phase eod          # Run EOD review + learning
+  python run_graph.py --phase training     # Run offline ML optimizations
 
 Triggered by:
   - scheduler_worker.py (cron jobs)
@@ -386,12 +387,67 @@ def run_eod():
         return None
 
 
+def run_training():
+    """Execute the ML optimization and training pipeline."""
+    from langgraph_workflow import build_training_graph
+
+    today = datetime.now(IST).strftime("%Y-%m-%d")
+
+    logging.info(f"\n{'=' * 60}")
+    logging.info(f"🧠 STARTING ML TRAINING GRAPH — {today}")
+    logging.info(f"{'=' * 60}\n")
+
+    _ensure_graph_runs_table()
+    run_id = _log_graph_start("TRAINING", today)
+    start = time.monotonic()
+
+    try:
+        graph = build_training_graph()
+
+        initial_state = {
+            "report_date": today,
+            "current_phase": "training",
+            "market_regime": "NEUTRAL",
+            "evolved_strategies": [],
+            "marl_policy": {},
+            "neat_best_network": {},
+            "options_gnn_signal": {},
+            "errors": [],
+            "graph_run_id": run_id,
+        }
+
+        result = graph.invoke(initial_state)
+
+        elapsed_ms = int((time.monotonic() - start) * 1000)
+
+        if run_id:
+            _log_graph_finish(run_id, "SUCCESS", elapsed_ms, result)
+
+        logging.info(f"\n{'=' * 60}")
+        logging.info(f"✅ ML TRAINING COMPLETE — {elapsed_ms}ms")
+        logging.info(f"  Evolved Strategies found: {len(result.get('evolved_strategies', []))}")
+        logging.info(f"{'=' * 60}\n")
+
+        return result
+
+    except Exception as e:
+        elapsed_ms = int((time.monotonic() - start) * 1000)
+        logging.error(f"💥 Training graph failed: {e}")
+        import traceback
+        traceback.print_exc()
+
+        if run_id:
+            _log_graph_finish(run_id, "FAILED", elapsed_ms, error=str(e)[:500])
+
+        return None
+
+
 # ── CLI Entry Point ──────────────────────────────────────────
 def main():
     parser = argparse.ArgumentParser(description="TIMM LangGraph Runner")
     parser.add_argument(
         "--phase",
-        choices=["premarket", "eod"],
+        choices=["premarket", "eod", "training"],
         required=True,
         help="Which graph phase to run"
     )
@@ -407,6 +463,8 @@ def main():
         result = run_premarket()
     elif args.phase == "eod":
         result = run_eod()
+    elif args.phase == "training":
+        result = run_training()
 
     if result and args.json:
         # Print a slim version (exclude huge analysis dicts)

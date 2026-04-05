@@ -212,6 +212,17 @@ def trigger_eod(background_tasks: BackgroundTasks):
     return {"message": "EOD review graph triggered.", "status": "QUEUED"}
 
 
+@app.post("/graph/training")
+def trigger_training(background_tasks: BackgroundTasks):
+    """Trigger the offline Heavy ML parameter optimization."""
+    def run():
+        from run_graph import run_training
+        run_training()
+
+    background_tasks.add_task(run)
+    return {"message": "ML training graph triggered.", "status": "QUEUED"}
+
+
 @app.get("/graph/setups")
 def get_today_setups():
     """Get today's trade setups with evidence chains."""

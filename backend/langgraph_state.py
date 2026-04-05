@@ -73,7 +73,8 @@ class TradingState(TypedDict, total=False):
     # ── Simulation Controls (Optional) ───────────────────────
     target_date: Optional[str]              # Historical date for backtesting (YYYY-MM-DD)
     profile: Optional[str]      
-    evolved_strategies: List[Dict] = Field(default_factory=list)
-    neat_best_network: Dict = Field(default_factory=dict)   
-    marl_policy: Dict = Field(default_factory=dict)         # 'live' or 'simulated' to protect real weights
-    sector_gnn_signal: Dict = Field(default_factory=dict)
+    evolved_strategies: list[dict]
+    neat_best_network: dict   
+    marl_policy: dict         # 'live' or 'simulated' to protect real weights
+    sector_gnn_signal: dict
+    options_gnn_signal: dict

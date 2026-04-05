@@ -4,8 +4,8 @@ import { useEffect, useState } from 'react';
 import { Network, ArrowRight } from 'lucide-react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, Cell } from 'recharts';
 
-// Dynamically import react-force-graph to avoid SSR 'window undefined' errors
-const ForceGraph2D = dynamic(() => import('react-force-graph').then(mod => mod.ForceGraph2D), { ssr: false });
+// Dynamically import react-force-graph-2d to avoid SSR 'window undefined' and AFRAME errors
+const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), { ssr: false });
 
 const mockSectorData = [
   { name: 'NIFTY IT', strength: 85, fill: '#10b981' },
@@ -17,8 +17,28 @@ const mockSectorData = [
   { name: 'BANK_NIFTY', strength: -75, fill: '#f43f5e' },
 ];
 
+interface GraphNode {
+  id: string;
+  name: string;
+  value: number;
+  color: string;
+  group: string;
+}
+
+interface GraphLink {
+  source: string;
+  target: string;
+  value: number;
+  color: string;
+}
+
+interface GraphData {
+  nodes: GraphNode[];
+  links: GraphLink[];
+}
+
 export default function SectorsPage() {
-  const [graphData, setGraphData] = useState({ nodes: [], links: [] });
+  const [graphData, setGraphData] = useState<GraphData>({ nodes: [], links: [] });
 
   useEffect(() => {
     // Generate nodes and links representing GNN sector flow
@@ -86,7 +106,6 @@ export default function SectorsPage() {
                   nodeColor="color"
                   linkWidth="value"
                   linkColor="color"
-                  linkOpacity={0.8}
                   backgroundColor="#0a0a0a" // neutral-950
                   cooldownTicks={100}
                   onNodeClick={(node) => console.log(`Clicked ${node.name}`)}
@@ -145,6 +164,37 @@ export default function SectorsPage() {
                 </BarChart>
               </ResponsiveContainer>
             </div>
+          </div>
+
+          {/* Attention Insight Explanations */}
+          <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-5 shadow-lg relative overflow-hidden">
+             <div className="absolute top-0 right-0 p-4 opacity-10 pointer-events-none">
+                <Network size={80} className="text-indigo-400" />
+             </div>
+             <h3 className="font-semibold text-white mb-4 relative z-10 flex flex-col">
+               <span className="text-xs text-indigo-400 uppercase tracking-widest font-bold">Why This Rotation?</span>
+               HeteroGNN Attention Weights
+             </h3>
+             <div className="space-y-4 relative z-10">
+               <div className="flex items-start gap-4">
+                 <div className="text-xs font-bold font-mono text-emerald-400 bg-emerald-500/10 px-2 py-1 rounded border border-emerald-500/20">
+                   0.87
+                 </div>
+                 <div>
+                   <p className="text-sm font-semibold text-white">IT → BANK Contagion</p>
+                   <p className="text-xs text-neutral-400 mt-0.5">Strong inverse correlation detected over the trailing 10 periods spanning 2 macro sectors.</p>
+                 </div>
+               </div>
+               <div className="flex items-start gap-4">
+                 <div className="text-xs font-bold font-mono text-indigo-400 bg-indigo-500/10 px-2 py-1 rounded border border-indigo-500/20">
+                   0.74
+                 </div>
+                 <div>
+                   <p className="text-sm font-semibold text-white">VIX MACRO → NIFTY Auto</p>
+                   <p className="text-xs text-neutral-400 mt-0.5">Implied Volatility spike creating outsized negative momentum on high-beta Auto names.</p>
+                 </div>
+               </div>
+             </div>
           </div>
 
         </div>

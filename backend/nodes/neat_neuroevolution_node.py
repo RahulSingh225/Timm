@@ -30,8 +30,8 @@ GENERATIONS = 80          # Increase slowly as your hardware allows
 POPULATION_SIZE = 150
 CHECKPOINT_FREQ = 10
 
-# Input features from your candle_vector_agent
-NUM_INPUTS = 8   # candle_scalar, iv_adjusted_scalar, rsi, volume_z, prev_signal, etc.
+# Input features from your candle_vector_agent + GNN
+NUM_INPUTS = 10  # candle_scalar, iv_adjusted_scalar, rsi, volume_z, prev_signal, etc. + 2 GNN embeddings
 NUM_OUTPUTS = 3  # e.g., [long_prob, short_prob, hold_prob] or position sizing
 # =========================================================
 
@@ -71,6 +71,12 @@ def eval_genomes(genomes, config):
         
         for i in range(10, len(df)):  # start after warmup
             row = df.iloc[i]
+            
+            # Proxying the historical GNN state (similar to MARL)
+            trailing_momentum = (row["close"] / df.iloc[i-10]["close"]) - 1
+            gnn_bull_conf = np.clip(0.5 + (trailing_momentum * 10), 0, 1)
+            gnn_rotation_strength = trailing_momentum * 5
+            
             inputs = [
                 row["candle_scalar"],
                 row["iv_adjusted_scalar"],
@@ -79,7 +85,9 @@ def eval_genomes(genomes, config):
                 row.get("prev_signal", 0),
                 (row["close"] - df.iloc[i-5:i]["close"].mean()) / df.iloc[i-5:i]["close"].std() if i > 5 else 0,
                 row.get("high_low_range", 0),
-                1 if row["iv_adjusted_scalar"] > 0 else -1
+                1 if row["iv_adjusted_scalar"] > 0 else -1,
+                gnn_bull_conf,
+                gnn_rotation_strength
             ]
             
             output = net.activate(inputs)

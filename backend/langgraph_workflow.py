@@ -58,7 +58,7 @@ def build_premarket_graph():
     graph.add_node("fii_dii", fii_dii_node)
     graph.add_node("load_watchlist", watchlist_node)
     graph.add_node("temporal_context", temporal_context_node)
-
+  
     # ── Phase 1: Analysis (fan-out — all run on the watchlist) ──
     graph.add_node("swing_analysis", swing_ta_node)
     graph.add_node("options_analysis", options_analysis_node)
@@ -95,6 +95,12 @@ def build_premarket_graph():
     # ── Edges: Converge to LLM synthesis ──
     graph.add_edge("intraday_builder", "head_analyst")
     graph.add_edge("options_builder", "head_analyst")
+    graph.add_node("evolutionary_optimizer", evolutionary_optimizer_node)
+    graph.add_node("neat_neuroevolution", neat_neuroevolution_node)
+    graph.add_edge("llm_hypothesis_generator", "neat_neuroevolution")
+    graph.add_node("marl_training", marl_training_subgraph)
+    graph.add_node("sector_gnn", sector_gnn_node)
+    graph.add_edge("marl_training", "sector_gnn")
     graph.add_edge("head_analyst", END)
 
     compiled = graph.compile()

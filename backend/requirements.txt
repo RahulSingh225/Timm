@@ -23,3 +23,15 @@ httpx
 schedule
 langgraph
 langchain-core
+deap
+sqlalchemy
+neat-python
+stable-baselines3
+gym
+torch
+torchvision
+torchaudio
+orch-geometric
+torch-scatter
+torch-sparse
+torch-cluster

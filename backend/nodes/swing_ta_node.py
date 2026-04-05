@@ -52,8 +52,18 @@ def swing_ta_node(state: dict) -> dict:
             else:
                 yf_symbol = f"{symbol}.NS"
 
+            target_date = state.get("target_date")
             ticker = yf.Ticker(yf_symbol)
-            df = ticker.history(period="1y", interval="1d")
+            
+            if target_date:
+                # Calculate start (1 year back) and end (target_date + 1 day to be inclusive)
+                from datetime import datetime, timedelta
+                td = datetime.strptime(target_date, "%Y-%m-%d")
+                end_date_str = (td + timedelta(days=1)).strftime("%Y-%m-%d")
+                start_date_str = (td - timedelta(days=365)).strftime("%Y-%m-%d")
+                df = ticker.history(start=start_date_str, end=end_date_str, interval="1d")
+            else:
+                df = ticker.history(period="1y", interval="1d")
 
             if df.empty or len(df) < 200:
                 logging.warning(f"    ⚠️ {symbol}: Insufficient data ({len(df)} candles, need 200+)")

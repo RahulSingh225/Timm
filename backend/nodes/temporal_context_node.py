@@ -33,7 +33,10 @@ def temporal_context_node(state: dict) -> dict:
       - strategy_weights: {signal_type: {weight, win_rate, sample_size}}
       - recent_performance: {regime_tradetype: {win_rate, avg_win_pnl, avg_loss_pnl}}
     """
-    logging.info("🧠 Loading temporal context (past performance + learned weights)...")
+    profile = state.get("profile", "live")
+    is_sim = (profile == "simulated")
+    
+    logging.info(f"🧠 Loading temporal context for profile: [{profile.upper()}]...")
 
     weights = {}
     recent = {}
@@ -57,7 +60,8 @@ def temporal_context_node(state: dict) -> dict:
                 SELECT signal_type, base_weight, user_override, win_count, loss_count,
                        avg_pnl_when_correct, avg_pnl_when_wrong
                 FROM strategy_weights
-            """)
+                WHERE profile = %s
+            """, (profile,))
             for row in cur.fetchall():
                 signal_type = row[0]
                 effective_weight = row[2] if row[2] is not None else row[1]  # user_override takes priority
@@ -73,7 +77,7 @@ def temporal_context_node(state: dict) -> dict:
                 }
 
             if weights:
-                logging.info(f"  Loaded {len(weights)} signal weights from history")
+                logging.info(f"  Loaded {len(weights)} signal weights from [{profile}] history")
                 # Log top/bottom performers
                 sorted_w = sorted(weights.items(), key=lambda x: x[1]["weight"], reverse=True)
                 if len(sorted_w) >= 2:
@@ -88,7 +92,7 @@ def temporal_context_node(state: dict) -> dict:
                         f"win_rate={worst[1]['win_rate']:.0%})"
                     )
             else:
-                logging.info("  No strategy weights yet (first run). Using defaults.")
+                logging.info(f"  No strategy weights yet for [{profile}]. Using defaults.")
         else:
             logging.info("  strategy_weights table not found. First run — using defaults.")
 
@@ -112,8 +116,9 @@ def temporal_context_node(state: dict) -> dict:
                     AVG(actual_pnl_pct) FILTER (WHERE was_correct = FALSE) AS avg_loss
                 FROM learning_history
                 WHERE trade_date >= CURRENT_DATE - INTERVAL '30 days'
+                  AND is_simulated = %s
                 GROUP BY market_regime, trade_type
-            """)
+            """, (is_sim,))
             for row in cur.fetchall():
                 regime = row[0] or "UNKNOWN"
                 trade_type = row[1] or "UNKNOWN"

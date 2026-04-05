@@ -66,3 +66,7 @@ class TradingState(TypedDict, total=False):
     errors: Annotated[list[str], add]       # Errors from any node (appended)
     current_phase: str                      # Current execution phase
     graph_run_id: Optional[int]             # ID in graph_runs table
+    
+    # ── Simulation Controls (Optional) ───────────────────────
+    target_date: Optional[str]              # Historical date for backtesting (YYYY-MM-DD)
+    profile: Optional[str]                  # 'live' or 'simulated' to protect real weights

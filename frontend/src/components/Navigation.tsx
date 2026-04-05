@@ -2,11 +2,12 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Activity, MessageSquare, Target, LayoutDashboard, Radar, Briefcase, Bot, Zap } from 'lucide-react';
+import { Activity, MessageSquare, Target, LayoutDashboard, Radar, Briefcase, Bot, Zap, List } from 'lucide-react';
 
 const navItems = [
     { href: '/', label: 'Command Center', icon: LayoutDashboard },
     { href: '/alpha', label: 'Alpha Center', icon: Zap },
+    { href: '/watchlist', label: 'Watchlist', icon: List },
     { href: '/screener', label: 'Intraday Screener', icon: Radar },
     { href: '/trades', label: 'Active Trades', icon: Briefcase },
     { href: '/vectors', label: 'Vector Lab', icon: Target },

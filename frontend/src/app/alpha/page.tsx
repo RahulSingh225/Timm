@@ -12,7 +12,8 @@ import {
   Rocket, 
   AlertTriangle, 
   Lightbulb,
-  Activity
+  Activity,
+  ExternalLink
 } from 'lucide-react';
 import { Navigation } from '@/components/Navigation';
 
@@ -243,10 +244,20 @@ function SetupCard({ setup, onAccept, isProcessing }: { setup: Setup, onAccept: 
                 </span>
               ) : (
                 <span className={`${isBullish ? 'text-emerald-400' : 'text-red-400'} uppercase tracking-widest`}>
-                  {setup.trade_type.replace('_', ' ')}
+                  {setup.trade_type?.replace('_', ' ')}
                 </span>
               )}
             </div>
+            
+            <a 
+              href={`https://www.tradingview.com/chart/?symbol=NSE:${setup.symbol.replace('.NS', '')}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-2 flex items-center gap-1 text-[10px] text-blue-400 hover:text-blue-300 transition-colors uppercase font-black tracking-widest"
+              title="View TradingView Chart"
+            >
+              <ExternalLink size={10} /> View Chart
+            </a>
           </div>
         </div>
         <div className="text-right">

@@ -264,6 +264,7 @@ export const tradeJournal = pgTable("trade_journal", {
     signalsUsed: jsonb("signals_used"), // Signals that generated this recommendation
     evidenceChain: jsonb("evidence_chain"), // Full evidence trail from every node
     userNotes: text("user_notes"),
+    isSimulated: boolean("is_simulated").default(false).notNull(),
     enteredAt: timestamp("entered_at").defaultNow().notNull(),
     exitedAt: timestamp("exited_at"),
     sessionType: varchar("session_type", { length: 20 }), // MORNING, AFTERNOON, EXPIRY
@@ -282,13 +283,15 @@ export const learningHistory = pgTable("learning_history", {
     vixAtTime: real("vix_at_time"),
     tradeType: varchar("trade_type", { length: 30 }), // INTRADAY, OPTIONS
     sessionType: varchar("session_type", { length: 20 }),
+    isSimulated: boolean("is_simulated").default(false).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
 // 17. STRATEGY WEIGHTS — Self-adjusting confidence multipliers per signal
 export const strategyWeights = pgTable("strategy_weights", {
     id: serial("id").primaryKey(),
-    signalType: varchar("signal_type", { length: 100 }).notNull().unique(),
+    signalType: varchar("signal_type", { length: 100 }).notNull(),
+    profile: varchar("profile", { length: 20 }).default("live").notNull(), // 'live', 'simulated'
     baseWeight: real("base_weight").default(1.0).notNull(), // System-calculated weight
     userOverride: real("user_override"), // Manual override (always takes priority)
     winCount: integer("win_count").default(0).notNull(),
@@ -296,7 +299,9 @@ export const strategyWeights = pgTable("strategy_weights", {
     avgPnlWhenCorrect: real("avg_pnl_when_correct"),
     avgPnlWhenWrong: real("avg_pnl_when_wrong"),
     lastUpdated: timestamp("last_updated").defaultNow().notNull(),
-});
+}, (table) => [
+    unique("strategy_weights_unique").on(table.signalType, table.profile),
+]);
 
 // 18. GRAPH RUNS — Tracks every LangGraph execution for observability
 export const graphRuns = pgTable("graph_runs", {

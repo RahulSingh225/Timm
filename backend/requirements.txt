@@ -29,6 +29,4 @@ neat-python
 stable-baselines3
 gym
 torch-geometric
-torch-scatter
-torch-sparse
-torch-cluster
+langchain-community

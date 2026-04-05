@@ -29,6 +29,20 @@
       "when": 1774536667292,
       "tag": "0003_acoustic_old_lace",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1775375577575,
+      "tag": "0004_colossal_hulk",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1775376447628,
+      "tag": "0005_old_giant_man",
+      "breakpoints": true
     }
   ]
 }

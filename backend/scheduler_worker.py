@@ -90,9 +90,17 @@ JOB_REGISTRY = {
         "cron": {"day": "1", "hour": "6", "minute": "0"},
         "category": "producer",
     },
-    "daily_report": {
-        "script": "daily_report_generator.py",
-        "description": "Daily Intelligence Report",
+    "premarket_graph": {
+        "script": "run_graph.py",
+        "args": ["--phase", "premarket"],
+        "description": "LangGraph Pre-Market Analysis",
+        "cron": {"hour": "8", "minute": "0", "day_of_week": "mon-fri"},
+        "category": "agent",
+    },
+    "eod_review_graph": {
+        "script": "run_graph.py",
+        "args": ["--phase", "eod"],
+        "description": "LangGraph EOD Review + Learning",
         "cron": {"hour": "16", "minute": "30", "day_of_week": "mon-fri"},
         "category": "agent",
     },

@@ -190,3 +190,91 @@ export const agentRuns = pgTable("agent_runs", {
 	metadata: jsonb(),
 	createdAt: timestamp("created_at", { mode: 'string' }).defaultNow().notNull(),
 });
+
+// ── LangGraph Workflow Tables ────────────────────────────────
+
+export const tradeJournal = pgTable("trade_journal", {
+	id: serial().primaryKey().notNull(),
+	tradeDate: timestamp("trade_date", { mode: 'string' }).notNull(),
+	symbol: varchar({ length: 50 }).notNull(),
+	tradeType: varchar("trade_type", { length: 30 }).notNull(),
+	entryPrice: real("entry_price").notNull(),
+	exitPrice: real("exit_price"),
+	stoploss: real(),
+	target: real(),
+	actualPnlPct: real("actual_pnl_pct"),
+	status: varchar({ length: 20 }).default('OPEN').notNull(),
+	predictedConfidence: real("predicted_confidence"),
+	signalsUsed: jsonb("signals_used"),
+	evidenceChain: jsonb("evidence_chain"),
+	userNotes: text("user_notes"),
+	enteredAt: timestamp("entered_at", { mode: 'string' }).defaultNow().notNull(),
+	exitedAt: timestamp("exited_at", { mode: 'string' }),
+	sessionType: varchar("session_type", { length: 20 }),
+	createdAt: timestamp("created_at", { mode: 'string' }).defaultNow().notNull(),
+});
+
+export const learningHistory = pgTable("learning_history", {
+	id: serial().primaryKey().notNull(),
+	tradeDate: timestamp("trade_date", { mode: 'string' }).notNull(),
+	signalType: varchar("signal_type", { length: 100 }).notNull(),
+	predictedDirection: varchar("predicted_direction", { length: 10 }),
+	wasCorrect: boolean("was_correct"),
+	actualPnlPct: real("actual_pnl_pct"),
+	marketRegime: varchar("market_regime", { length: 20 }),
+	vixAtTime: real("vix_at_time"),
+	tradeType: varchar("trade_type", { length: 30 }),
+	sessionType: varchar("session_type", { length: 20 }),
+	createdAt: timestamp("created_at", { mode: 'string' }).defaultNow().notNull(),
+});
+
+export const strategyWeights = pgTable("strategy_weights", {
+	id: serial().primaryKey().notNull(),
+	signalType: varchar("signal_type", { length: 100 }).notNull(),
+	baseWeight: real("base_weight").default(1.0).notNull(),
+	userOverride: real("user_override"),
+	winCount: integer("win_count").default(0).notNull(),
+	lossCount: integer("loss_count").default(0).notNull(),
+	avgPnlWhenCorrect: real("avg_pnl_when_correct"),
+	avgPnlWhenWrong: real("avg_pnl_when_wrong"),
+	lastUpdated: timestamp("last_updated", { mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	unique("strategy_weights_signal_type_unique").on(table.signalType),
+]);
+
+export const graphRuns = pgTable("graph_runs", {
+	id: serial().primaryKey().notNull(),
+	graphType: varchar("graph_type", { length: 30 }).notNull(),
+	runDate: timestamp("run_date", { mode: 'string' }).notNull(),
+	startedAt: timestamp("started_at", { mode: 'string' }).defaultNow().notNull(),
+	finishedAt: timestamp("finished_at", { mode: 'string' }),
+	durationMs: integer("duration_ms"),
+	stateSnapshot: jsonb("state_snapshot"),
+	phaseCompleted: varchar("phase_completed", { length: 30 }),
+	totalSetups: integer("total_setups"),
+	totalAccepted: integer("total_accepted"),
+	status: varchar({ length: 20 }).default('RUNNING').notNull(),
+	errorMessage: text("error_message"),
+	createdAt: timestamp("created_at", { mode: 'string' }).defaultNow().notNull(),
+});
+
+export const dailyReports = pgTable("daily_reports", {
+	id: serial().primaryKey().notNull(),
+	reportDate: varchar("report_date", { length: 10 }).notNull(),
+	marketRegime: varchar("market_regime", { length: 20 }),
+	vix: real(),
+	fiiNet: varchar("fii_net", { length: 50 }),
+	diiNet: varchar("dii_net", { length: 50 }),
+	watchlistAnalysis: jsonb("watchlist_analysis"),
+	topPicks: jsonb("top_picks"),
+	avoidList: jsonb("avoid_list"),
+	headAnalystBrief: text("head_analyst_brief"),
+	totalStocksAnalyzed: integer("total_stocks_analyzed"),
+	totalSignals: integer("total_signals"),
+	intradaySetups: jsonb("intraday_setups"),
+	optionsSetups: jsonb("options_setups"),
+	evidenceChain: jsonb("evidence_chain"),
+	createdAt: timestamp("created_at", { mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	unique("daily_reports_report_date_unique").on(table.reportDate),
+]);

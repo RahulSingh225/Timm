@@ -232,11 +232,85 @@ export const dailyReports = pgTable("daily_reports", {
     vix: real("vix"),
     fiiNet: varchar("fii_net", { length: 50 }), // '+2340 Cr'
     diiNet: varchar("dii_net", { length: 50 }),
-    watchlistAnalysis: jsonb("watchlist_analysis").notNull(), // Array of per-stock analysis
+    watchlistAnalysis: jsonb("watchlist_analysis"), // Array of per-stock analysis
     topPicks: jsonb("top_picks"), // Array of symbol strings
     avoidList: jsonb("avoid_list"), // Array of symbol strings
     headAnalystBrief: text("head_analyst_brief"), // LLM-generated narrative
     totalStocksAnalyzed: integer("total_stocks_analyzed"),
     totalSignals: integer("total_signals"),
-    generatedAt: timestamp("generated_at").defaultNow().notNull(),
+    intradaySetups: jsonb("intraday_setups"), // LangGraph: equity LONG/SHORT setups
+    optionsSetups: jsonb("options_setups"), // LangGraph: options CALL/PUT setups
+    evidenceChain: jsonb("evidence_chain"), // LangGraph: evidence chain from all nodes
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// ============================================================
+// LANGGRAPH AGENTIC WORKFLOW TABLES
+// ============================================================
+
+// 15. TRADE JOURNAL — Every trade entered through the LangGraph system
+export const tradeJournal = pgTable("trade_journal", {
+    id: serial("id").primaryKey(),
+    tradeDate: timestamp("trade_date").notNull(),
+    symbol: varchar("symbol", { length: 50 }).notNull(),
+    tradeType: varchar("trade_type", { length: 30 }).notNull(), // INTRADAY_LONG, INTRADAY_SHORT, OPTIONS_CALL, OPTIONS_PUT
+    entryPrice: real("entry_price").notNull(),
+    exitPrice: real("exit_price"),
+    stoploss: real("stoploss"),
+    target: real("target"),
+    actualPnlPct: real("actual_pnl_pct"),
+    status: varchar("status", { length: 20 }).default("OPEN").notNull(), // OPEN, SL_HIT, TARGET_HIT, MANUAL_EXIT, EXPIRED
+    predictedConfidence: real("predicted_confidence"),
+    signalsUsed: jsonb("signals_used"), // Signals that generated this recommendation
+    evidenceChain: jsonb("evidence_chain"), // Full evidence trail from every node
+    userNotes: text("user_notes"),
+    enteredAt: timestamp("entered_at").defaultNow().notNull(),
+    exitedAt: timestamp("exited_at"),
+    sessionType: varchar("session_type", { length: 20 }), // MORNING, AFTERNOON, EXPIRY
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// 16. LEARNING HISTORY — Per-signal accuracy tracking for self-learning
+export const learningHistory = pgTable("learning_history", {
+    id: serial("id").primaryKey(),
+    tradeDate: timestamp("trade_date").notNull(),
+    signalType: varchar("signal_type", { length: 100 }).notNull(), // BB_SQUEEZE, GOLDEN_CROSS, etc.
+    predictedDirection: varchar("predicted_direction", { length: 10 }), // BULLISH, BEARISH
+    wasCorrect: boolean("was_correct"),
+    actualPnlPct: real("actual_pnl_pct"),
+    marketRegime: varchar("market_regime", { length: 20 }), // RISK_ON, RISK_OFF, NEUTRAL
+    vixAtTime: real("vix_at_time"),
+    tradeType: varchar("trade_type", { length: 30 }), // INTRADAY, OPTIONS
+    sessionType: varchar("session_type", { length: 20 }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// 17. STRATEGY WEIGHTS — Self-adjusting confidence multipliers per signal
+export const strategyWeights = pgTable("strategy_weights", {
+    id: serial("id").primaryKey(),
+    signalType: varchar("signal_type", { length: 100 }).notNull().unique(),
+    baseWeight: real("base_weight").default(1.0).notNull(), // System-calculated weight
+    userOverride: real("user_override"), // Manual override (always takes priority)
+    winCount: integer("win_count").default(0).notNull(),
+    lossCount: integer("loss_count").default(0).notNull(),
+    avgPnlWhenCorrect: real("avg_pnl_when_correct"),
+    avgPnlWhenWrong: real("avg_pnl_when_wrong"),
+    lastUpdated: timestamp("last_updated").defaultNow().notNull(),
+});
+
+// 18. GRAPH RUNS — Tracks every LangGraph execution for observability
+export const graphRuns = pgTable("graph_runs", {
+    id: serial("id").primaryKey(),
+    graphType: varchar("graph_type", { length: 30 }).notNull(), // PREMARKET, EOD_REVIEW
+    runDate: timestamp("run_date").notNull(),
+    startedAt: timestamp("started_at").defaultNow().notNull(),
+    finishedAt: timestamp("finished_at"),
+    durationMs: integer("duration_ms"),
+    stateSnapshot: jsonb("state_snapshot"), // Serialized graph state
+    phaseCompleted: varchar("phase_completed", { length: 30 }),
+    totalSetups: integer("total_setups"),
+    totalAccepted: integer("total_accepted"),
+    status: varchar("status", { length: 20 }).default("RUNNING").notNull(),
+    errorMessage: text("error_message"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
 });

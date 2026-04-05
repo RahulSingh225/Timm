@@ -21,3 +21,5 @@ scipy
 apscheduler
 httpx
 schedule
+langgraph
+langchain-core

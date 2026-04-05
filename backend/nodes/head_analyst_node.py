@@ -43,6 +43,7 @@ def head_analyst_node(state: dict) -> dict:
     dii_net = state.get("dii_net", "N/A")
     sectors = state.get("sector_leaders", [])
     avoid_list = state.get("avoid_list", [])
+    lessons_learned = state.get("lessons_learned", [])
 
     if not top_picks and not intraday_setups and not options_setups:
         logging.info("No setups to analyze — skipping LLM brief.")
@@ -88,6 +89,11 @@ def head_analyst_node(state: dict) -> dict:
     # Sectors
     sector_list = ", ".join(f"{s['sector']} (₹{s['net_cr']}Cr)" for s in sectors[:3]) if sectors else "N/A"
 
+    # Lessons
+    lessons_text = ""
+    if lessons_learned:
+        lessons_text = "HISTORICAL LESSONS TO APPLY TODAY:\n" + "\n".join([f"- Under {l.get('regime')} regime: {l.get('lesson')}" for l in lessons_learned])
+
     prompt = f"""You are a senior prop desk analyst writing the MORNING BRIEF for a retail trader.
 
 MARKET CONDITIONS:
@@ -101,6 +107,8 @@ EQUITY INTRADAY SETUPS (can go LONG or SHORT):
 
 OPTIONS SCALPING SETUPS (BUY CALL or BUY PUT only, max ₹50 per lot):
 {options_section if options_section else "None today."}
+
+{lessons_text}
 
 AVOID LIST: {', '.join(avoid_list) if avoid_list else 'None'}
 

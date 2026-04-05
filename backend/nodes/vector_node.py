@@ -75,14 +75,14 @@ def _persist_vector_signal(symbol: str, result: dict):
                 signal = EXCLUDED.signal
         """, (
             symbol,
-            result.get("raw_scalar"),
-            result.get("iv_adjusted_scalar"),
-            result.get("current_atm_iv", 0),
-            result.get("signed_accumulation", 0),
-            result.get("predicted_next_move_pct", 0),
-            result.get("linear_m", 0),
-            result.get("linear_b", 0),
-            result.get("confidence", 0),
+            float(result.get("raw_scalar", 0) or 0),
+            float(result.get("iv_adjusted_scalar", 0) or 0) if result.get("iv_adjusted_scalar") is not None else None,
+            float(result.get("current_atm_iv", 0) or 0),
+            float(result.get("signed_accumulation", 0) or 0),
+            float(result.get("predicted_next_move_pct", 0) or 0),
+            float(result.get("linear_m", 0) or 0),
+            float(result.get("linear_b", 0) or 0),
+            float(result.get("confidence", 0) or 0),
             result.get("signal", "neutral")
         ))
         

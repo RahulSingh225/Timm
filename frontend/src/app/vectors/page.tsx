@@ -86,16 +86,25 @@ export default function VectorLab() {
                     <h1 className="text-2xl font-bold tracking-tight text-white">VECTOR LAB</h1>
                 </div>
                 <div className="flex items-center gap-4 text-sm">
+                    {history.length > 0 && (
+                        <span className="text-neutral-500 bg-neutral-900 border border-neutral-800 px-3 py-1.5 rounded flex items-center gap-2">
+                            <Clock size={14} /> 
+                            Last Refreshed: {new Date(history[0].timestamp).toLocaleTimeString()}
+                        </span>
+                    )}
                     {isConnected ? (
                         <span className="flex items-center gap-2 text-blue-400 bg-blue-400/10 border border-blue-400/20 px-3 py-1.5 rounded">
                             <span className="relative flex h-2 w-2">
                                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
                                 <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
                             </span>
-                            Vectors Live
+                            Listening for Brain Burst...
                         </span>
                     ) : (
-                        <span className="text-red-400 bg-red-400/10 border border-red-400/20 px-3 py-1.5 rounded">Disconnected</span>
+                        <span className="text-neutral-500 bg-neutral-900 border border-neutral-800 px-3 py-1.5 rounded flex items-center gap-2">
+                            <Activity size={14} className="animate-pulse text-yellow-500" />
+                            Standby (Batch Mode)
+                        </span>
                     )}
                 </div>
             </header>

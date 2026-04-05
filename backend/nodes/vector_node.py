@@ -5,10 +5,92 @@ Wraps the existing SymbolEngine from candle_vector_agent.py.
 Processes historical candles to detect accumulation/distribution patterns.
 """
 
+import os
+import json
+import pika
+import psycopg2
 import logging
 import yfinance as yf
+from datetime import datetime
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - [NODE:VECTOR] - %(message)s')
+
+DB_URL = os.getenv("DATABASE_URL")
+RABBIT_URL = os.getenv("RABBITMQ_URL")
+
+# ... (I'll keep the functions here but I need to replace the loop)
+
+def _get_db_conn():
+    return psycopg2.connect(DB_URL)
+
+def _publish_vector_signal(symbol: str, result: dict):
+    """Publish the signal to RabbitMQ for real-time dashboard updates."""
+    try:
+        params = pika.URLParameters(RABBIT_URL)
+        connection = pika.BlockingConnection(params)
+        channel = connection.channel()
+        
+        exchange = 'market_data_exchange'
+        channel.exchange_declare(exchange=exchange, exchange_type='topic', durable=True)
+        
+        # Format for frontend VectorLab consumption
+        payload = {
+            "symbol": symbol,
+            "timestamp": datetime.now().isoformat(),
+            "raw_scalar": result.get("raw_scalar"),
+            "iv_adjusted_scalar": result.get("iv_adjusted_scalar"),
+            "current_atm_iv": result.get("current_atm_iv", 0),
+            "signed_accumulation": result.get("signed_accumulation", 0),
+            "predicted_next_move": result.get("predicted_next_move_pct", 0),
+            "linear_m": result.get("linear_m", 0),
+            "linear_b": result.get("linear_b", 0),
+            "confidence": result.get("confidence", 0),
+            "signal": result.get("signal", "neutral")
+        }
+        
+        channel.basic_publish(
+            exchange=exchange,
+            routing_key='candle.vector',
+            body=json.dumps(payload)
+        )
+        connection.close()
+    except Exception as e:
+        logging.warning(f"  [VECTOR:MQ] Failed to publish signal for {symbol}: {e}")
+
+def _persist_vector_signal(symbol: str, result: dict):
+    """Save the signal to the vector_signals table for historical explorer."""
+    try:
+        conn = _get_db_conn()
+        cur = conn.cursor()
+        
+        cur.execute("""
+            INSERT INTO vector_signals (
+                symbol, timestamp, raw_scalar, iv_adjusted_scalar, 
+                current_atm_iv, signed_accumulation, predicted_next_move,
+                linear_m, linear_b, confidence, signal, created_at
+            ) VALUES (%s, NOW(), %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+            ON CONFLICT (symbol, timestamp) DO UPDATE SET
+                raw_scalar = EXCLUDED.raw_scalar,
+                confidence = EXCLUDED.confidence,
+                signal = EXCLUDED.signal
+        """, (
+            symbol,
+            result.get("raw_scalar"),
+            result.get("iv_adjusted_scalar"),
+            result.get("current_atm_iv", 0),
+            result.get("signed_accumulation", 0),
+            result.get("predicted_next_move_pct", 0),
+            result.get("linear_m", 0),
+            result.get("linear_b", 0),
+            result.get("confidence", 0),
+            result.get("signal", "neutral")
+        ))
+        
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        logging.warning(f"  [VECTOR:DB] Failed to persist signal for {symbol}: {e}")
 
 # Import the existing engine
 import sys
@@ -77,6 +159,10 @@ def vector_analysis_node(state: dict) -> dict:
 
             if result:
                 analyses[symbol] = result
+
+                # 💡 REVITALIZE VECTOR LAB: Persist and Publish
+                _persist_vector_signal(symbol, result)
+                _publish_vector_signal(symbol, result)
 
                 if result.get("signal", "neutral") != "neutral":
                     logging.info(

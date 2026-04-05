@@ -10,7 +10,7 @@ from datetime import datetime
 import torch
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv
-from ..env.trading_env import NiftyMARLEnv
+from trading_env import NiftyMARLEnv
 from langgraph_state import TradingState
 
 logger = logging.getLogger(__name__)
@@ -43,10 +43,10 @@ def marl_training_subgraph(state: TradingState) -> TradingState:
     model.save(model_path)
 
     # Store in state for judge_node and live inference
-    state.marl_policy = {
+    state['marl_policy'] = {
         "model_path": model_path,
         "trained_at": datetime.utcnow().isoformat(),
-        "mean_reward": float(model.logger.name_dict.get("rollout/ep_rew_mean", 0)),
+        "mean_reward": float(model.logger.name_dict.get("rollout/ep_rew_mean", 0)) if model.logger and hasattr(model.logger, 'name_dict') else 0.0,
         "description": "Multi-Agent PPO policy for coordinated intraday + options decisions"
     }
 

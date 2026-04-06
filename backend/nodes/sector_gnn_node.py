@@ -188,7 +188,7 @@ def sector_gnn_node(state: TradingState) -> TradingState:
     # Derive some fake insights simulating Attention mapping for the UI
     attention_insight = "FII Flows actively suppressing BANK momentum while favoring IT." if predicted_class < 2 else "Broad volume expansion driving NIFTY correlation across high beta."
 
-    state.sector_gnn_signal = {
+    state['sector_gnn_signal'] = {
         "model_type": "Temporal_Hetero_GAT",
         "predicted_rotation": prediction_label,
         "confidence": confidence_val,

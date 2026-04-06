@@ -116,7 +116,7 @@ def neat_neuroevolution_node(state: TradingState) -> TradingState:
     config_path = "config/neat_config.txt"   # Create this file (see below)
     if not os.path.exists(config_path):
         logger.error("NEAT config file not found. Create config/neat_config.txt")
-        state.neat_best_network = None
+        state['neat_best_network'] = None
         return state
 
     config = neat.Config(
@@ -143,7 +143,7 @@ def neat_neuroevolution_node(state: TradingState) -> TradingState:
         pickle.dump({"network": best_net, "genome": winner, "config": config}, f)
 
     # Store in state for other nodes to use
-    state.neat_best_network = {
+    state['neat_best_network'] = {
         "model_path": model_path,
         "fitness": float(winner.fitness),
         "generated_at": datetime.utcnow().isoformat(),

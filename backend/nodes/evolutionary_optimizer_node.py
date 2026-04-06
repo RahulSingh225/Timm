@@ -129,7 +129,7 @@ def evolutionary_optimizer_node(state: TradingState) -> TradingState:
     
     if len(df) < 500:
         logger.warning("Not enough historical data for evolution")
-        state.evolved_strategies = []
+        state['evolved_strategies'] = []
         return state
 
     # 2. Setup DEAP
@@ -176,7 +176,7 @@ def evolutionary_optimizer_node(state: TradingState) -> TradingState:
         })
 
     # 5. Save to state + DB (your judge_node and self_learning_node will consume this)
-    state.evolved_strategies = best_strategies
+    state['evolved_strategies'] = best_strategies
     
     # Optional: persist to DB for RAG
     try:

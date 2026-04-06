@@ -27,7 +27,7 @@ llm = Ollama(
     model="qwen2.5-coder:14b",
     temperature=0.7,
     num_ctx=8192,
-    base_url="http://localhost:11434"  # adjust if needed
+    base_url=os.getenv("OPENAI_API_BASE", "http://host.docker.internal:11434")  # Resolves host outside Docker bridge
 )
 
 def generate_hypotheses(state: TradingState, num_hypotheses: int = 8) -> List[Dict]:
@@ -103,7 +103,7 @@ def llm_hypothesis_generator_node(state: TradingState) -> TradingState:
     new_hypotheses = generate_hypotheses(state, num_hypotheses=8)
     
     # Store in state so evolutionary node can seed them
-    state.llm_generated_hypotheses = new_hypotheses
+    state['llm_generated_hypotheses'] = new_hypotheses
     
     # Optional: persist to DB for RAG and historical analysis
     try:

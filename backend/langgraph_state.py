@@ -78,3 +78,4 @@ class TradingState(TypedDict, total=False):
     marl_policy: dict         # 'live' or 'simulated' to protect real weights
     sector_gnn_signal: dict
     options_gnn_signal: dict
+    llm_generated_hypotheses: list[dict]

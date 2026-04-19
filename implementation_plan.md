@@ -1,26 +1,6 @@
-# TIMM → LangGraph Agentic Workflow Redesign
+# Timm AI Trading Platform — Master Implementation Plan
 
-## The Big Picture: Why LangGraph?
-
-Your current system is a **collection of independent workers** that communicate via RabbitMQ. They run in isolation — each agent does its job, publishes a message, and hopes someone downstream picks it up. There's no orchestration, no shared state, no ability to make a coordinated decision across agents.
-
-**LangGraph changes this fundamentally:**
-
-```
-CURRENT: Workers → RabbitMQ → Workers → DB (hope for the best)
-FUTURE:  LangGraph Graph → Shared State → Coordinated Decision → Your Dashboard
-```
-
-### What You Gain
-
-| Problem Today | LangGraph Solution |
-|---|---|
-| Agents run independently, no coordination | **StateGraph** orchestrates all agents in a deterministic DAG — each agent contributes to shared state |
-| Daily report is a monolithic script | **Phased graph execution** — Research → Screening → Synthesis → Recommendation, each testable independently |
-| No way to track "I took this trade" | **Human-in-the-Loop (HITL)** — graph pauses, waits for your trade confirmation, then resumes monitoring |
-| No self-learning from outcomes | **Feedback loop node** — EOD review compares predictions vs reality, stores learnings that feed future analysis |
-| Options scalping is not separated from intraday | **Conditional routing** — two parallel sub-graphs: one for equity intraday (long/short), one for options (buy calls/puts) |
-| Can't explain WHY a trade was recommended | **Evidence chain** — every node appends its reasoning to a shared `evidence[]` array that justifies the final output |
+Comprehensive roadmap for building a hybrid systematic + agentic trading system that combines LangGraph orchestration, mathematical models, and ML-driven strategy evolution. This plan preserves the discretionary edge (HITL + evidence chain) while adding the rigor of systematic trading (repeatable, backtestable, self-improving math signals).
 
 ---
 
@@ -28,644 +8,438 @@ FUTURE:  LangGraph Graph → Shared State → Coordinated Decision → Your Dash
 
 ```mermaid
 graph TB
-    subgraph "PHASE 1: Pre-Market Research (8:00 AM)"
-        A[Global Cues Node] --> B[FII/DII Context Node]
-        B --> C[Watchlist Loader Node]
-        C --> D{Parallel Analysis}
-        D --> E[Swing TA Node]
-        D --> F[Options Analysis Node]
-        D --> G[Vector Analysis Node]
+    subgraph "Data Layer"
+        A[yfinance / Broker API] --> B[PostgreSQL Feature Store]
+        C[FII/DII Scrapers] --> B
+        D[News / Sentiment] --> B
+        E[Options Chain OI/IV] --> B
     end
 
-    subgraph "PHASE 2: Setup Identification (8:30 AM)"
-        E --> H[Screener/Confluence Node]
-        F --> H
-        G --> H
-        H --> I{Route by Trade Type}
-        I -->|Equity| J[Intraday Setup Builder]
-        I -->|Options| K[Options Scalp Builder]
-        J --> L[Head Analyst / LLM Synthesis]
-        K --> L
+    subgraph "LangGraph Orchestration"
+        B --> F[Pre-Market Graph]
+        B --> G[Training Graph]
+        B --> H[EOD Review Graph]
+        F --> I[Human Review / HITL]
+        I --> J[Live Monitoring]
+        J --> H
     end
 
-    subgraph "PHASE 3: Human Decision (9:00 AM)"
-        L --> M["🧑 Dashboard: Review Setups"]
-        M -->|Accept Trade| N[Register Active Trade]
-        M -->|Skip| O[Log Skip + Reason]
+    subgraph "Mathematical Models (Training Graph)"
+        G --> K[Regime Detector HMM]
+        G --> L[Symbolic Regression / GP]
+        G --> M[NEAT Neuroevolution]
+        G --> N[MARL PPO Policy]
+        G --> O[Sector GNN]
+        G --> P[Options IV HeteroGNN]
+        G --> Q[GARCH Volatility]
     end
 
-    subgraph "PHASE 4: Session Monitor (9:15 AM - 3:30 PM)"
-        N --> P[Price Monitor Node]
-        P -->|SL Hit| Q[Close Trade - Loss]
-        P -->|Target Hit| R[Close Trade - Win]
-        P -->|Session End| S[EOD Snapshot]
-    end
-
-    subgraph "PHASE 5: EOD Review & Learning (4:00 PM)"
-        S --> T[Performance Scorer Node]
-        Q --> T
-        R --> T
-        O --> T
-        T --> U[Self-Learning Node]
-        U --> V[Update Strategy Weights]
-        V --> W["💾 Store in learning_history"]
+    subgraph "Self-Learning Loop"
+        H --> R[strategy_weights Update]
+        H --> S[learning_history]
+        S --> G
+        R --> F
     end
 ```
 
 ---
 
-## User Review Required
+## Current State (Completed ✅)
 
-> [!IMPORTANT]
-> **Trade Type Separation**: I'm designing TWO parallel pipelines:
-> 1. **Intraday Equity** — can go LONG or SHORT, targets 2-3% moves
-> 2. **Options Scalping** — can only BUY CALLS or BUY PUTS, near-expiry or expiry day
-> 
-> Both run in the same LangGraph graph but diverge at the "Route by Trade Type" conditional edge. **Is this the right separation?**
+### Core Infrastructure
+- [x] LangGraph StateGraph with phased execution (pre-market → setup → review → EOD)
+- [x] Shared `TradingState` with evidence chain for explainability
+- [x] Conditional routing for equity intraday vs options scalping
+- [x] Feedback loop updating `strategy_weights` and `learning_history`
+- [x] FastAPI backend with worker management (`main.py`)
+- [x] Docker Compose deployment on AWS EC2
+
+### Analysis Nodes (Pre-Market Graph)
+- [x] `swing_ta_node` — pandas-ta technical analysis (ATR, ADX, VWAP, OBV, MTFC)
+- [x] `options_node` — Options chain analysis
+- [x] `vector_node` — Candle vector signal processing
+- [x] `global_cues_node` — SPY 200-SMA, VIX, global indices
+- [x] `screener_node` — Multi-signal confluence scoring
+- [x] `head_analyst_node` — LLM synthesis + morning brief
+- [x] `adversarial_critic_node` — Devil's advocate debate
+- [x] `judge_node` — Final arbitration with defense mode
+- [x] `temporal_context_node` — Point-in-time data guardrails
+
+### ML Training Graph (Skeleton)
+- [x] `llm_hypothesis_generator_node` — Qwen2.5 strategy hypothesis generation
+- [x] `evolutionary_optimizer_node` — DEAP genetic programming
+- [x] `neat_neuroevolution_node` — NEAT topology evolution
+- [x] `marl_training_subgraph` — PPO multi-agent RL
+- [x] `sector_gnn_node` — Temporal Hetero GAT for sector rotation
+- [x] `options_gnn_node` — HeteroConv for IV surface prediction
+
+### Backtesting & Simulation
+- [x] `simulate_graph.py` — Historical time-machine backtester
+- [x] Point-in-time constraints (no future data leakage)
+- [x] Isolated DB profiles (`simulated` vs `live`)
+- [x] Auto-evaluation with T+1 performance grading
+
+### Dashboard (Next.js)
+- [x] ML Desk navigation and sector GNN visualization
+- [x] Force-directed graph for sector rotation
+- [x] Attention insight panel for contagion weights
+- [x] Daily advisor brief and setup cards
+
+---
+
+## Immediate Fixes Required 🔧
 
 > [!WARNING]
-> **Migration Strategy**: This redesign will **replace** the existing `daily_report_generator.py` with a LangGraph-based orchestrator. The individual analysis functions (`analyze_swing_setups`, `analyze_option_chain`, etc.) will be **preserved and wrapped** as LangGraph nodes — we're not rewriting your TA logic. RabbitMQ workers (vault, monitor) will continue to run alongside LangGraph. **Are you comfortable with this approach?**
+> These must be resolved before any training can proceed.
+
+### 1. Docker Rebuild for NEAT Config
+The EC2 container has a stale `neat_config.txt` missing `[DefaultReproduction]`.
+```bash
+docker compose build backend && docker compose up -d backend
+```
+
+### 2. Database Table Initialization
+The training graph crashes because required tables don't exist yet:
+- `candle_vector_signals` — Needed by GP evolution
+- `evolved_strategies` — Needed by LLM hypothesis generator
+
+**Action:** Run full data ingestion pipeline before training:
+```bash
+docker compose exec -T backend python seed_historical.py
+docker compose exec -T backend python yfinance_producer.py
+```
+
+### 3. Ollama Model Pull
+LLM hypothesis generation fails with 404. Either:
+- Pull the model on EC2: `ollama pull qwen2.5-coder:14b`
+- Or set `OLLAMA_URL` env var pointing to your Ollama host
+
+---
+
+## Phase 1: Foundation & Data Pipeline (Weeks 1–2)
 
 > [!IMPORTANT]
-> **Self-Learning Scope**: The self-learning node will track:
-> - Which signals led to winning vs losing trades
-> - Signal confidence accuracy (predicted 80% confidence, actual win rate was 55%)
-> - Time-of-day effectiveness (morning setups vs afternoon)
-> - Which factors (FII flow, VIX, sector strength) actually correlated with wins
-> 
-> This data will adjust **confidence scoring weights** over time. It will NOT autonomously change entry/SL/target logic — that stays deterministic. **Does this match your expectation?**
+> No mathematical model works without clean, versioned, point-in-time data. This is the **highest priority**.
+
+### 1.1 Complete LangGraph Migration
+- [ ] Wrap remaining RabbitMQ analysis workers as LangGraph nodes
+- [ ] Retire `swing_agent_worker.py`, `options_agent_worker.py`, `screener_agent_worker.py`
+- [ ] Ensure all nodes use `state['key']` dict syntax (not `state.key` dot notation)
+
+### 1.2 Feature Store Implementation
+
+#### [NEW] `backend/feature_store.py`
+- [ ] Centralized feature computation and versioning
+- [ ] Point-in-time feature retrieval (critical for backtesting integrity)
+- [ ] Features to compute and store:
+  - OHLCV + returns (1D, 5D, 20D rolling)
+  - TA indicators: ATR(14), RSI(14), ADX(14), VWAP, OBV slope, MACD
+  - Volume profile: relative volume, VWAP deviation
+  - Options: PCR, max pain, IV percentile, OI concentration
+  - Macro: VIX level + change, FII/DII net (5D rolling), global overnight gap
+  - Sector: relative strength vs NIFTY, sector momentum rank
+
+### 1.3 Data Quality & Ingestion
+- [ ] Add data validation checks in `db_vault_worker.py` (null detection, outlier flags)
+- [ ] Implement `candle_vector_signals` table creation in seed scripts
+- [ ] Add `evolved_strategies` table auto-creation in evolutionary optimizer node
+- [ ] Track feature freshness (stale data alerts on dashboard)
 
 ---
 
-## Proposed Changes
+## Phase 2: Regime Detection Model (Weeks 2–3)
 
-### Component 1: LangGraph Core — State & Graph Definition
+> [!TIP]
+> The regime detector is the **single most impactful model** to build first. Every downstream prediction should be conditioned on regime.
 
-#### [NEW] [langgraph_state.py](file:///c:/Users/blkhrt/Documents/git/Timm/backend/langgraph_state.py)
+### 2.1 Hidden Markov Model (HMM) Regime Detector
 
-The shared state object that flows through the entire graph:
+#### [NEW] `backend/nodes/regime_detector_node.py`
+- [ ] Input features: ADX, VIX, OBV divergence, FII flow direction, ATR percentile
+- [ ] Use `hmmlearn.GaussianHMM` with 4 hidden states:
+  - **Trending Bull** (high ADX, low VIX, positive FII)
+  - **Trending Bear** (high ADX, high VIX, negative FII)
+  - **Mean-Reverting / Range** (low ADX, moderate VIX)
+  - **High Volatility Expansion** (VIX spike, ATR breakout)
+- [ ] Output: Current regime label + transition probability matrix
+- [ ] Train on 3+ years of NIFTY daily data
+- [ ] Add to `TradingState` as `detected_regime` with confidence
 
-```python
-from typing import TypedDict, Optional, Annotated
-from operator import add
+### 2.2 Integration
+- [ ] Place regime detector as **first node** in pre-market graph (before all analysis)
+- [ ] All downstream nodes condition on regime (e.g., critic applies different thresholds per regime)
+- [ ] Dashboard: Regime indicator widget with historical regime timeline chart
 
-class TradingState(TypedDict):
-    # ── Phase 1: Context ──
-    report_date: str
-    market_regime: str          # RISK_ON / RISK_OFF / NEUTRAL
-    vix: Optional[float]
-    fii_net: Optional[str]
-    dii_net: Optional[str]
-    global_cues: dict           # Full global context
-    sector_leaders: list[dict]
-    watchlist: list[str]        # Active symbols
-
-    # ── Phase 1: Analysis Results ──
-    swing_analyses: dict        # {symbol: swing_report}
-    options_analyses: dict      # {symbol: options_report}
-    vector_analyses: dict       # {symbol: vector_report}
-
-    # ── Phase 2: Setups ──
-    intraday_setups: list[dict]     # Equity long/short setups
-    options_setups: list[dict]      # Options scalp setups (calls/puts)
-    all_evidence: Annotated[list[dict], add]  # Every factor that led to a recommendation
-
-    # ── Phase 2: Synthesis ──
-    top_picks: list[dict]       # Ranked trade recommendations
-    avoid_list: list[str]
-    head_analyst_brief: Optional[str]
-
-    # ── Phase 3: Human Decision ──
-    accepted_trades: list[dict]     # Trades the user chose to take
-    skipped_trades: list[dict]      # Trades the user passed on (with reasons)
-
-    # ── Phase 4: Session ──
-    active_trade_status: dict       # Live P&L tracking
-
-    # ── Phase 5: EOD ──
-    eod_results: list[dict]         # Final P&L per trade
-    learning_updates: list[dict]    # What the system learned today
-
-    # ── Meta ──
-    errors: Annotated[list[str], add]
-    current_phase: str
-```
+### 2.3 Dependencies
+- [ ] Add `hmmlearn` to `requirements.txt`
 
 ---
 
-#### [NEW] [langgraph_workflow.py](file:///c:/Users/blkhrt/Documents/git/Timm/backend/langgraph_workflow.py)
+## Phase 3: Symbolic Regression / Expected Move Model (Weeks 3–5)
 
-The main LangGraph `StateGraph` definition:
+### 3.1 Enhance GP Evolution Node
 
-```python
-from langgraph.graph import StateGraph, END
-from langgraph_state import TradingState
+#### [MODIFY] `backend/nodes/evolutionary_optimizer_node.py`
+- [ ] Integrate `PySR` (symbolic regression) alongside DEAP for cleaner formula discovery
+- [ ] Target variable: Next-day % move (or next 15-min for intraday)
+- [ ] Input primitives: `raw_scalar`, `iv_adjusted_scalar`, `rsi`, `obv_slope`, `atr_pct`, `vwap_deviation`, `regime_label`
+- [ ] Fitness function: Information Coefficient (IC) — rank correlation between predicted and actual move
+- [ ] Store discovered formulas with human-readable expressions in `evolved_strategies` table
+- [ ] Add regime-specific evolution (evolve separate formulas per regime)
 
-# Import node functions
-from nodes.global_cues_node import global_cues_node
-from nodes.fii_dii_node import fii_dii_node
-from nodes.watchlist_node import watchlist_node
-from nodes.swing_ta_node import swing_ta_node
-from nodes.options_node import options_analysis_node
-from nodes.vector_node import vector_analysis_node
-from nodes.screener_node import screener_node
-from nodes.intraday_builder_node import intraday_builder_node
-from nodes.options_builder_node import options_builder_node
-from nodes.head_analyst_node import head_analyst_node
-from nodes.eod_review_node import eod_review_node
-from nodes.self_learning_node import self_learning_node
+### 3.2 LLM-Guided Hypothesis Seeding
 
-def build_trading_graph() -> StateGraph:
-    graph = StateGraph(TradingState)
+#### [MODIFY] `backend/nodes/llm_hypothesis_generator_node.py`
+- [ ] Feed back top-performing formulas from `evolved_strategies` into the LLM prompt
+- [ ] Ask LLM to propose mutations and novel combinations
+- [ ] Implement RAG over `llm_hypotheses` table for historical context
+- [ ] Add fallback mode when Ollama is unavailable (use cached hypotheses from DB)
 
-    # ── Phase 1: Research ──
-    graph.add_node("global_cues", global_cues_node)
-    graph.add_node("fii_dii", fii_dii_node)
-    graph.add_node("load_watchlist", watchlist_node)
-    graph.add_node("swing_analysis", swing_ta_node)
-    graph.add_node("options_analysis", options_analysis_node)
-    graph.add_node("vector_analysis", vector_analysis_node)
-
-    # ── Phase 2: Synthesis ──
-    graph.add_node("screener", screener_node)
-    graph.add_node("intraday_builder", intraday_builder_node)
-    graph.add_node("options_builder", options_builder_node)
-    graph.add_node("head_analyst", head_analyst_node)
-
-    # ── Phase 5: EOD ──
-    graph.add_node("eod_review", eod_review_node)
-    graph.add_node("self_learning", self_learning_node)
-
-    # ── Edges ──
-    graph.set_entry_point("global_cues")
-    graph.add_edge("global_cues", "fii_dii")
-    graph.add_edge("fii_dii", "load_watchlist")
-
-    # Parallel analysis (fan-out)
-    graph.add_edge("load_watchlist", "swing_analysis")
-    graph.add_edge("load_watchlist", "options_analysis")
-    graph.add_edge("load_watchlist", "vector_analysis")
-
-    # Convergence (fan-in)
-    graph.add_edge("swing_analysis", "screener")
-    graph.add_edge("options_analysis", "screener")
-    graph.add_edge("vector_analysis", "screener")
-
-    # Route to trade type builders
-    graph.add_edge("screener", "intraday_builder")
-    graph.add_edge("screener", "options_builder")
-
-    # Converge to synthesis
-    graph.add_edge("intraday_builder", "head_analyst")
-    graph.add_edge("options_builder", "head_analyst")
-
-    # HEAD ANALYST → END (Phase 2 complete — dashboard picks up from here)
-    graph.add_edge("head_analyst", END)
-
-    # EOD sub-graph (triggered separately after market close)
-    # eod_review → self_learning → END
-
-    return graph.compile()
-```
+### 3.3 Dependencies
+- [ ] Add `pysr` to `requirements.txt`
 
 ---
 
-#### [NEW] [nodes/](file:///c:/Users/blkhrt/Documents/git/Timm/backend/nodes/) — Node function directory
+## Phase 4: Volatility Forecasting (Weeks 4–6)
 
-Each node is a thin wrapper around your existing analysis logic:
+### 4.1 GARCH Volatility Model
 
-| Node File | Wraps | What It Does |
-|---|---|---|
-| `nodes/__init__.py` | — | Package init |
-| `nodes/global_cues_node.py` | `_fetch_global_context()` from daily_report | Fetches VIX, SPY, GIFT Nifty, bias → writes to `state.global_cues` |
-| `nodes/fii_dii_node.py` | DB query | Fetches FII/DII flows + sector data → writes to `state.fii_net`, `state.sector_leaders` |
-| `nodes/watchlist_node.py` | `_fetch_watchlist()` | Loads active symbols → writes to `state.watchlist` |
-| `nodes/swing_ta_node.py` | `analyze_swing_setups()` from `swing_agent_ta.py` | Runs swing TA on each symbol → writes to `state.swing_analyses` |
-| `nodes/options_node.py` | `analyze_option_chain()` from `options_agent_worker.py` | Runs options chain analysis → writes to `state.options_analyses` |
-| `nodes/vector_node.py` | `SymbolEngine.process_candle()` from `candle_vector_agent.py` | Runs vector analysis → writes to `state.vector_analyses` |
-| `nodes/screener_node.py` | Confluence scoring logic | Combines all analyses, scores setups → routes to builders |
-| `nodes/intraday_builder_node.py` | New | Builds equity intraday setups with entry/SL/target + evidence chain |
-| `nodes/options_builder_node.py` | New | Builds options scalp setups (buy call/put) + evidence chain |
-| `nodes/head_analyst_node.py` | `generate_market_brief()` from `head_analyst_worker.py` | LLM synthesis with full context → final recommendations |
-| `nodes/eod_review_node.py` | New | Compares predictions vs actual outcomes |
-| `nodes/self_learning_node.py` | New | Updates strategy weights based on trade outcomes |
+#### [NEW] `backend/nodes/volatility_forecast_node.py`
+- [ ] Implement GARCH(1,1) on NIFTY returns for daily volatility forecast
+- [ ] Compare realized vs implied volatility → IV premium/discount signal
+- [ ] Use `arch` library for estimation
+- [ ] Output: Forecasted 1D/5D volatility, IV-RV spread, vol regime
+- [ ] Feed into options builder for better strike selection and sizing
 
----
+### 4.2 Integration
+- [ ] Add volatility forecast to `TradingState`
+- [ ] Options builder uses vol forecast for expected move calculation
+- [ ] Critic penalizes setups where predicted vol disagrees with trade thesis
 
-### Component 2: Options Scalping Builder
-
-#### [NEW] [nodes/options_builder_node.py](file:///c:/Users/blkhrt/Documents/git/Timm/backend/nodes/options_builder_node.py)
-
-This is entirely new — builds options scalping setups specifically:
-
-```python
-def options_builder_node(state: TradingState) -> dict:
-    """
-    Build options scalp recommendations from confluence data.
-    
-    Rules (your trading style):
-    - Only BUY CALLS or BUY PUTS (no selling/writing)
-    - Prefer near-expiry or expiry day for max gamma
-    - Entry based on: underlying trend + OI walls + expected move
-    - SL = 30% of premium paid
-    - Target = 50-100% of premium paid
-    """
-    setups = []
-    
-    for symbol, swing in state["swing_analyses"].items():
-        options = state["options_analyses"].get(symbol)
-        if not options or not swing:
-            continue
-        
-        signal_type = swing.get("signal_type")
-        confidence = swing.get("confidence", 0)
-        
-        if confidence < 50:
-            continue
-        
-        # Determine call/put based on confluence
-        if signal_type == "BULLISH":
-            option_type = "BUY_CALL"
-            strike_ref = options.get("put_wall")  # Enter near support
-        elif signal_type == "BEARISH":
-            option_type = "BUY_PUT"
-            strike_ref = options.get("call_wall")  # Enter near resistance
-        else:
-            continue
-        
-        evidence = [
-            f"Swing TA: {signal_type} with {len(swing.get('signals', []))} signals",
-            f"Options verdict: {options.get('verdict')}",
-            f"Max Pain: ₹{options.get('max_pain')} | Expected Move: ±{options.get('expected_move_pct')}%",
-            f"PCR: {options.get('pcr_volume')} | Call Wall: {options.get('call_wall')} | Put Wall: {options.get('put_wall')}",
-        ]
-        
-        setups.append({
-            "symbol": symbol,
-            "trade_type": "OPTIONS_SCALP",
-            "option_action": option_type,
-            "underlying_price": swing.get("close_price"),
-            "confidence": confidence,
-            "strike_reference": strike_ref,
-            "max_pain": options.get("max_pain"),
-            "expected_move_pct": options.get("expected_move_pct"),
-            "evidence": evidence,
-        })
-    
-    return {"options_setups": setups}
-```
+### 4.3 Dependencies
+- [ ] Add `arch` to `requirements.txt`
 
 ---
 
-### Component 3: Self-Learning System
+## Phase 5: Advanced ML Subgraph Hardening (Weeks 5–8)
 
-#### [NEW] [nodes/self_learning_node.py](file:///c:/Users/blkhrt/Documents/git/Timm/backend/nodes/self_learning_node.py)
+### 5.1 NEAT Neuroevolution Polish
 
-The self-learning node runs at EOD to analyze today's performance:
+#### [MODIFY] `backend/nodes/neat_neuroevolution_node.py`
+- [ ] Fix all `state.` → `state['']` dict access patterns
+- [ ] Add graceful fallback when no training data exists (return empty network, don't crash)
+- [ ] Implement fitness function tied to actual Sharpe ratio from simulated trades
+- [ ] Save/load best genomes across training runs (incremental evolution)
+- [ ] Visualize evolved network topologies on dashboard
 
-```python
-def self_learning_node(state: TradingState) -> dict:
-    """
-    EOD Self-Learning:
-    1. Compare each recommendation's prediction vs actual outcome
-    2. Score signal accuracy (which signals were right?)
-    3. Update confidence weights in the learning_history table
-    4. Feed back into future screener_node confidence scoring
-    """
-    learnings = []
-    
-    for trade in state.get("eod_results", []):
-        predicted_direction = trade["predicted_direction"]
-        actual_pnl = trade["actual_pnl_pct"]
-        signals_used = trade["signals_used"]
-        
-        was_correct = (
-            (predicted_direction == "BULLISH" and actual_pnl > 0) or
-            (predicted_direction == "BEARISH" and actual_pnl < 0)
-        )
-        
-        # Score each signal that contributed
-        for signal in signals_used:
-            learnings.append({
-                "signal_type": signal,
-                "predicted_direction": predicted_direction,
-                "was_correct": was_correct,
-                "actual_pnl_pct": actual_pnl,
-                "date": state["report_date"],
-                "market_regime": state.get("market_regime"),
-                "vix_at_time": state.get("vix"),
-            })
-    
-    # Also learn from SKIPPED trades (did we miss a good one?)
-    for skip in state.get("skipped_trades", []):
-        # Check what actually happened to skipped stocks
-        # ...
-    
-    return {"learning_updates": learnings}
-```
+### 5.2 MARL PPO Hardening
+
+#### [MODIFY] `backend/nodes/marl_training_subgraph.py`
+- [ ] Migrate from `gym` to `gymnasium` (gym is unmaintained, breaks on NumPy 2.0)
+- [ ] Inject GNN-derived regime signals into observation space (already sketched)
+- [ ] Add transaction cost modeling in `trading_env.py` (brokerage + slippage + STT)
+- [ ] Reward shaping: Penalize drawdown, reward risk-adjusted returns (Calmar ratio)
+- [ ] Implement curriculum learning: Train on easy regimes first, then hard ones
+- [ ] Add position sizing as action output (not just direction)
+
+### 5.3 Sector GNN Enhancement
+
+#### [MODIFY] `backend/nodes/sector_gnn_node.py`
+- [ ] Dynamic edge construction from rolling correlation matrix (not static adjacency)
+- [ ] Add FII/DII flow as edge weights (capital flow direction between sectors)
+- [ ] Temporal message passing (aggregate sector state over 5D/20D windows)
+- [ ] Output: Sector rotation forecast (which sectors to rotate into/out of)
+
+### 5.4 Options IV HeteroGNN
+
+#### [MODIFY] `backend/nodes/options_gnn_node.py`
+- [ ] Add real options chain data ingestion (not just mocked data)
+- [ ] Model strike-adjacency + calendar spread edges
+- [ ] Predict IV surface shift direction (expansion vs crush)
+- [ ] Integrate with volatility forecast node for combined signal
 
 ---
 
-### Component 4: New Database Tables
+## Phase 6: Training & Validation Infrastructure (Weeks 6–10)
 
-#### [NEW] Database migrations for learning system
+> [!CAUTION]
+> Without rigorous validation, all models will overfit. This phase is **non-negotiable** for production use.
 
-```sql
--- Trade journal: tracks every trade you take through the system
-CREATE TABLE trade_journal (
-    id SERIAL PRIMARY KEY,
-    trade_date DATE NOT NULL,
-    symbol VARCHAR(50) NOT NULL,
-    trade_type VARCHAR(30) NOT NULL,        -- 'INTRADAY_LONG', 'INTRADAY_SHORT', 'OPTIONS_CALL', 'OPTIONS_PUT'
-    entry_price REAL NOT NULL,
-    exit_price REAL,
-    stoploss REAL,
-    target REAL,
-    actual_pnl_pct REAL,
-    status VARCHAR(20) DEFAULT 'OPEN',      -- 'OPEN', 'SL_HIT', 'TARGET_HIT', 'MANUAL_EXIT', 'EXPIRED'
-    predicted_confidence REAL,              -- What the system predicted
-    signals_used JSONB,                     -- Signals that generated this recommendation
-    evidence_chain JSONB,                   -- Full evidence trail from every node
-    user_notes TEXT,                        -- Your notes when entering the trade
-    entered_at TIMESTAMP DEFAULT NOW(),
-    exited_at TIMESTAMP,
-    session_type VARCHAR(20),               -- 'MORNING', 'AFTERNOON', 'EXPIRY'
-    created_at TIMESTAMP DEFAULT NOW()
-);
+### 6.1 Walk-Forward Optimization
 
--- Learning history: stores what the system learned from each trade
-CREATE TABLE learning_history (
-    id SERIAL PRIMARY KEY,
-    trade_date DATE NOT NULL,
-    signal_type VARCHAR(100) NOT NULL,      -- e.g., 'BB_SQUEEZE', 'GOLDEN_CROSS', 'VOLUME_SPIKE'
-    predicted_direction VARCHAR(10),
-    was_correct BOOLEAN,
-    actual_pnl_pct REAL,
-    market_regime VARCHAR(20),
-    vix_at_time REAL,
-    trade_type VARCHAR(30),                 -- 'INTRADAY' or 'OPTIONS'
-    session_type VARCHAR(20),               -- 'MORNING', 'AFTERNOON', 'EXPIRY'
-    created_at TIMESTAMP DEFAULT NOW()
-);
+#### [NEW] `backend/walk_forward_validator.py`
+- [ ] Implement rolling window train/validate/test splits
+- [ ] Train on 70% → Validate on 15% → Test on 15%
+- [ ] Report metrics per split: Sharpe, Calmar, max drawdown, profit factor, edge per trade
+- [ ] Regime-specific performance breakdown (don't average across regimes)
 
--- Strategy weights: adjustable confidence multipliers per signal
-CREATE TABLE strategy_weights (
-    id SERIAL PRIMARY KEY,
-    signal_type VARCHAR(100) UNIQUE NOT NULL,
-    base_weight REAL DEFAULT 1.0,           -- System-calculated weight
-    user_override REAL,                     -- Your manual override (if any)
-    win_count INTEGER DEFAULT 0,
-    loss_count INTEGER DEFAULT 0,
-    avg_pnl_when_correct REAL,
-    avg_pnl_when_wrong REAL,
-    last_updated TIMESTAMP DEFAULT NOW()
-);
+### 6.2 Backtesting Metrics Enhancement
 
--- Graph runs: tracks every LangGraph execution
-CREATE TABLE graph_runs (
-    id SERIAL PRIMARY KEY,
-    graph_type VARCHAR(30) NOT NULL,        -- 'PREMARKET', 'EOD_REVIEW', 'INTRADAY_MONITOR'
-    run_date DATE NOT NULL,
-    started_at TIMESTAMP DEFAULT NOW(),
-    finished_at TIMESTAMP,
-    duration_ms INTEGER,
-    state_snapshot JSONB,                   -- Full serialized graph state
-    phase_completed VARCHAR(30),            -- Last phase completed
-    total_setups INTEGER,
-    total_accepted INTEGER,
-    status VARCHAR(20) DEFAULT 'RUNNING',
-    error_message TEXT,
-    created_at TIMESTAMP DEFAULT NOW()
-);
-```
+#### [MODIFY] `backend/simulate_graph.py`
+- [ ] Add transaction cost modeling (brokerage, STT, slippage estimate)
+- [ ] Track max drawdown, consecutive losses, win rate by regime
+- [ ] Generate equity curve and store in DB for dashboard visualization
+- [ ] Add out-of-sample metrics after training completes
+- [ ] Consider integrating `vectorbt` for vectorized backtesting speed
+
+### 6.3 Position Sizing Optimization
+
+#### [NEW] `backend/nodes/position_sizing_node.py`
+- [ ] Kelly criterion implementation (with half-Kelly for safety)
+- [ ] ATR-based position sizing (already partially in swing_ta_node)
+- [ ] Maximum portfolio heat limit (e.g., 2% total risk at any time)
+- [ ] Regime-adjusted sizing (smaller in high-vol regimes)
+
+### 6.4 Model Registry
+
+#### [NEW] `backend/model_registry.py`
+- [ ] Track model versions, training dates, and performance metrics
+- [ ] Auto-promote best models to production
+- [ ] Rollback capability if live performance degrades
+- [ ] Store model artifacts in S3 (or local `models/` directory)
 
 ---
 
-### Component 5: API Endpoints for Human-in-the-Loop
+## Phase 7: Dashboard & Observability (Weeks 8–12)
 
-#### [MODIFY] [main.py](file:///c:/Users/blkhrt/Documents/git/Timm/backend/main.py)
+### 7.1 ML Training Dashboard
 
-Add new endpoints for the LangGraph workflow:
+#### [NEW] `frontend/src/app/ml/training/page.tsx`
+- [ ] Real-time training progress via SSE
+- [ ] Loss curves, reward curves, fitness evolution charts
+- [ ] TensorBoard-like metric comparison across training runs
+- [ ] "Run Evolution Cycle" button wired to `/graph/training` endpoint
 
-```python
-# ── LangGraph Workflow Endpoints ──
+### 7.2 Backtesting Results Dashboard
 
-@app.post("/graph/premarket")
-def trigger_premarket_analysis():
-    """Trigger the pre-market research + setup identification graph."""
-    # Runs Phase 1 + Phase 2, stores results in DB
-    # Dashboard polls /graph/setups to see recommendations
+#### [NEW] `frontend/src/app/ml/backtest/page.tsx`
+- [ ] Equity curve visualization
+- [ ] Monthly returns heatmap
+- [ ] Drawdown chart
+- [ ] Regime-tagged trade scatter plot
+- [ ] Strategy comparison table (GP vs NEAT vs MARL vs ensemble)
 
-@app.get("/graph/setups")
-def get_today_setups():
-    """Get today's trade setups (for dashboard display)."""
-    # Returns intraday_setups + options_setups with evidence chains
+### 7.3 Regime & Model Dashboard
 
-@app.post("/graph/accept-trade")
-def accept_trade(trade_data: dict):
-    """Human confirms a trade entry — system starts monitoring."""
-    # Inserts into trade_journal
-    # Resumes the graph into Phase 4 (monitoring)
+#### [NEW] `frontend/src/app/ml/regime/page.tsx`
+- [ ] Current regime indicator with historical timeline
+- [ ] Regime transition probability heatmap
+- [ ] Model confidence over time chart
+- [ ] Feature importance / SHAP values visualization
 
-@app.post("/graph/skip-trade")
-def skip_trade(trade_data: dict):
-    """Human skips a trade — logged for learning."""
-    # Inserts into skipped_trades with optional reason
+### 7.4 Evolved Strategies Gallery
 
-@app.post("/graph/eod-review")
-def trigger_eod_review():
-    """Trigger EOD review + self-learning graph."""
-    # Runs Phase 5: performance scoring + learning updates
-
-@app.get("/graph/learning-stats")
-def get_learning_stats():
-    """Get the system's learning statistics."""
-    # Returns signal accuracy, win rates, weight adjustments
-```
+#### [NEW] `frontend/src/app/ml/strategies/page.tsx`
+- [ ] Display discovered GP formulas in human-readable math notation
+- [ ] NEAT network topology visualization
+- [ ] Strategy performance cards (Sharpe, win rate, regime affinity)
+- [ ] "Promote to Live" button for HITL approval
 
 ---
 
-### Component 6: Scheduler Integration
+## Phase 8: AWS Production Deployment (Weeks 10–14)
 
-#### [MODIFY] [scheduler_worker.py](file:///c:/Users/blkhrt/Documents/git/Timm/backend/scheduler_worker.py)
+### 8.1 Training Pipeline on AWS
+- [ ] Migrate training graph to run on EC2 GPU instances (g4dn.xlarge for T4 GPU)
+- [ ] Use spot instances for cost control (~70% savings)
+- [ ] Schedule nightly training via `scheduler_worker.py` (post-market hours)
+- [ ] Store model artifacts in S3 with versioning
+- [ ] LangGraph loads latest model from S3 at runtime
 
-Replace the `daily_report` job with the LangGraph workflow:
+### 8.2 Orchestration
+- [ ] AWS Batch or Step Functions for daily simulation + retraining pipeline
+- [ ] CloudWatch alerts for training failures, model degradation
+- [ ] Cost monitoring dashboard (GPU hours, S3 storage)
 
-```python
-JOB_REGISTRY = {
-    # ... existing jobs ...
-    
-    "premarket_graph": {
-        "script": "run_graph.py",
-        "args": ["--phase", "premarket"],
-        "description": "LangGraph Pre-Market Analysis",
-        "cron": {"hour": "8", "minute": "0", "day_of_week": "mon-fri"},
-        "category": "agent",
-    },
-    "eod_review_graph": {
-        "script": "run_graph.py",
-        "args": ["--phase", "eod"],
-        "description": "LangGraph EOD Review + Learning",
-        "cron": {"hour": "16", "minute": "30", "day_of_week": "mon-fri"},
-        "category": "agent",
-    },
-}
-```
-
-#### [NEW] [run_graph.py](file:///c:/Users/blkhrt/Documents/git/Timm/backend/run_graph.py)
-
-CLI entry point for triggering graph phases:
-
-```python
-"""CLI entry point for LangGraph workflow execution."""
-import sys
-import argparse
-from langgraph_workflow import build_trading_graph
-from datetime import datetime
-from zoneinfo import ZoneInfo
-
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--phase", choices=["premarket", "eod"], required=True)
-    args = parser.parse_args()
-
-    graph = build_trading_graph()
-    today = datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%Y-%m-%d")
-
-    if args.phase == "premarket":
-        initial_state = {
-            "report_date": today,
-            "current_phase": "premarket",
-            # ... minimal initial state
-        }
-        result = graph.invoke(initial_state)
-        # Store result in graph_runs table + daily_reports table
-        
-    elif args.phase == "eod":
-        # Load today's accepted trades from trade_journal
-        # Run EOD review sub-graph
-        pass
-
-if __name__ == "__main__":
-    main()
-```
+### 8.3 Inference Optimization
+- [ ] `torch.compile()` for GNN and NEAT inference models
+- [ ] Model quantization (INT8) for faster CPU inference during pre-market
+- [ ] Lambda functions for lightweight inference API (optional)
 
 ---
 
-### Component 7: Existing Workers — What Stays, What Changes
+## Phase 9: Advanced Research (Weeks 12+, Ongoing)
 
-| File | Action | Reason |
-|---|---|---|
-| `swing_agent_ta.py` | **KEEP AS-IS** | Its `analyze_swing_setups()` function is called by `swing_ta_node.py` |
-| `options_agent_worker.py` | **KEEP AS-IS** | Its `analyze_option_chain()` function is called by `options_node.py` |
-| `candle_vector_agent.py` | **KEEP AS-IS** | Its `SymbolEngine` class is imported by `vector_node.py` |
-| `head_analyst_worker.py` | **KEEP AS-IS** | Its `generate_market_brief()` is called by `head_analyst_node.py` |
-| `daily_report_generator.py` | **DEPRECATED** | Replaced by `langgraph_workflow.py` (does everything it does + more) |
-| `screener_agent_worker.py` | **KEEP AS-IS** | Screening logic reused; RabbitMQ worker survives for real-time mode |
-| `db_vault_worker.py` | **KEEP AS-IS** | Still ingests RabbitMQ messages to DB |
-| `price_monitor_worker.py` | **KEEP AS-IS** | Still monitors active trades in real-time |
-| `scheduler_worker.py` | **MODIFY** | Replace `daily_report` with `premarket_graph` + `eod_review_graph` |
-| `main.py` | **MODIFY** | Add LangGraph API endpoints |
+### 9.1 LLM Fine-Tuning
+- [ ] Fine-tune small model (LoRA on Qwen/Llama) on `trade_journal` + `evidence_chain`
+- [ ] Improve JSON output quality and domain-specific reasoning
+- [ ] Train on historical analyst briefs for better synthesis
+
+### 9.2 Ensemble Meta-Learner
+- [ ] Stacking model that combines GP, NEAT, MARL, GNN predictions
+- [ ] Dynamic weighting based on regime and recent performance
+- [ ] The "meta-judge" that learns which model to trust when
+
+### 9.3 Order Flow & Microstructure
+- [ ] Integrate Level 2 / order book data (if available from broker)
+- [ ] Model bid-ask spread dynamics
+- [ ] Detect large block trades and institutional footprint
+
+### 9.4 Alternative Data
+- [ ] Satellite data for commodity-linked sectors (agriculture, metals)
+- [ ] Social media sentiment (Twitter/X mentions, Reddit wsb-India)
+- [ ] Earnings surprise predictor from financial filings
+
+### 9.5 Cross-Market Signals
+- [ ] SGX Nifty → NIFTY open prediction
+- [ ] US futures (ES, NQ) → Indian IT/pharma sector signal
+- [ ] Dollar index (DXY) → FII flow prediction model
 
 ---
 
-## File Tree (New Files)
+## Key Design Principles
+
+| Principle | Implementation |
+|---|---|
+| **No future data leakage** | `temporal_context_node` + point-in-time feature store |
+| **Regime conditioning** | All models output regime-tagged predictions |
+| **HITL preserved** | LangGraph debate → human review → accept/skip/modify |
+| **Transaction costs** | All backtests include brokerage + STT + slippage |
+| **Graceful degradation** | Every ML node has a fallback path (return empty, don't crash) |
+| **Incremental evolution** | Models improve nightly, never reset from scratch |
+| **Explainability** | Evidence chain, SHAP values, formula display |
+
+---
+
+## Dependencies Summary
 
 ```
-backend/
-├── langgraph_state.py          # Shared TradingState TypedDict
-├── langgraph_workflow.py        # StateGraph definition + compilation
-├── run_graph.py                # CLI entry point
-├── nodes/
-│   ├── __init__.py
-│   ├── global_cues_node.py
-│   ├── fii_dii_node.py
-│   ├── watchlist_node.py
-│   ├── swing_ta_node.py
-│   ├── options_node.py
-│   ├── vector_node.py
-│   ├── screener_node.py
-│   ├── intraday_builder_node.py
-│   ├── options_builder_node.py
-│   ├── head_analyst_node.py
-│   ├── eod_review_node.py
-│   └── self_learning_node.py
-├── migrations/
-│   └── 004_langgraph_tables.sql  # New DB tables
+# Phase 1 (existing)
+langgraph, langchain-core, langchain-community
+pandas, pandas-ta, numpy, scipy
+psycopg2-binary, fastapi, uvicorn
+torch, torch-geometric
+deap, neat-python, stable-baselines3
+yfinance, pika, httpx
+
+# Phase 2
+hmmlearn                    # Regime detection (HMM)
+
+# Phase 3
+pysr                        # Symbolic regression
+
+# Phase 4
+arch                        # GARCH volatility modeling
+
+# Phase 5
+gymnasium                   # Replace deprecated gym
+
+# Phase 6
+vectorbt                    # Fast vectorized backtesting (optional)
 ```
-
----
-
-## Execution Order
-
-> [!IMPORTANT]
-> **We build in 4 phases, each producing a testable, working system:**
-
-### Phase A: Foundation (First)
-1. Install `langgraph` dependency
-2. Create `langgraph_state.py` (state definition)
-3. Create `nodes/` directory with all node files (wrapping existing logic)
-4. Create `langgraph_workflow.py` (graph definition)
-5. Create `run_graph.py` (CLI runner)
-6. Test: `python run_graph.py --phase premarket` produces a structured report
-
-### Phase B: Trade Type Routing
-7. Create `nodes/intraday_builder_node.py` (equity long/short setups)
-8. Create `nodes/options_builder_node.py` (options scalp setups)
-9. Add conditional routing in the graph
-10. Test: Graph produces separate intraday + options recommendations
-
-### Phase C: Human-in-the-Loop + Monitoring
-11. Run DB migrations (trade_journal, learning_history, strategy_weights, graph_runs)
-12. Add API endpoints to `main.py` (accept/skip trade, get setups)
-13. Wire up price_monitor integration for accepted trades
-14. Test: Accept a trade via API → trade appears in trade_journal → price monitor tracks it
-
-### Phase D: Self-Learning
-15. Create `nodes/eod_review_node.py`
-16. Create `nodes/self_learning_node.py`
-17. Build the EOD sub-graph
-18. Wire strategy_weights into screener_node confidence scoring
-19. Test: Run EOD review → learning_history gets populated → next day's confidence scores reflect learnings
-
----
-
-## Open Questions
-
-> [!IMPORTANT]
-> **Options Scalping Details**: For options scalping, do you want:
-> - Only NIFTY/BANKNIFTY options, or also stock options?
-> - Specific strike selection logic (ATM, 1 OTM, etc.)?
-> - Max premium per lot as a risk limit?
-
-> [!IMPORTANT]
-> **Trade Count**: You mentioned "2 major trades intraday" — should the system cap recommendations at 2 per day (1 equity + 1 options), or show more and let you pick 2?
-
-> [!WARNING]
-> **RabbitMQ Coexistence**: The real-time RabbitMQ workers (db_vault, price_monitor, screener in live mode) will continue running alongside LangGraph. LangGraph handles the *batch orchestration* flow (pre-market analysis, EOD review). RabbitMQ handles *real-time event streaming* (price alerts, live screener). **Does this dual architecture make sense to you, or do you want to fully migrate off RabbitMQ?**
-
-> [!IMPORTANT]
-> **Dashboard Integration**: The dashboard will need new pages/components to:
-> 1. Display today's setups with evidence chains
-> 2. Accept/Skip trade buttons
-> 3. Show learning statistics over time
-> This is a separate frontend task after the backend is built. **Should I plan for that now or handle it after the backend is done?**
 
 ---
 
 ## Verification Plan
 
 ### Automated Tests
-- `python run_graph.py --phase premarket` completes without errors
-- Graph produces structured output with both `intraday_setups` and `options_setups`
-- Evidence chains contain entries from every analysis node
-- API endpoints return correct data
-- EOD review correctly compares predictions vs actuals
-- Strategy weights update correctly based on trade outcomes
+1. `python simulate_graph.py --start-date 2023-01-01 --end-date 2025-12-31` — Full historical walkthrough
+2. `python run_graph.py --phase training` — End-to-end training pipeline
+3. Walk-forward validation with OOS Sharpe > 0.5 as minimum bar
+4. Regime detection accuracy vs manually labeled periods
 
 ### Manual Verification
-- Trigger pre-market graph → review setups on dashboard
-- Accept a test trade → verify it appears in trade_journal
-- Wait for price monitor to update P&L
-- Trigger EOD review → verify learning_history populated
-- Next day: verify confidence scores reflect updated weights
+1. Review evolved GP formulas for financial intuition (no nonsensical expressions)
+2. Compare NEAT/MARL recommendations against experienced trader intuition
+3. Dashboard visual inspection for all ML panels
+4. Paper trading for 30 days before any live capital allocation

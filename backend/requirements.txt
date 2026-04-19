@@ -27,6 +27,7 @@ deap
 sqlalchemy
 neat-python
 stable-baselines3
-gym
+gymnasium
 torch-geometric
 langchain-community
+hmmlearn

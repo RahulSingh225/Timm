@@ -112,45 +112,68 @@ def neat_neuroevolution_node(state: TradingState) -> TradingState:
     """Main LangGraph node"""
     logger.info("🧬 Starting NEAT Neuroevolution Cycle...")
 
-    # Load or create config
-    config_path = "config/neat_config.txt"   # Create this file (see below)
-    if not os.path.exists(config_path):
-        logger.error("NEAT config file not found. Create config/neat_config.txt")
-        state['neat_best_network'] = None
-        return state
+    try:
+        # Load or create config
+        config_path = "config/neat_config.txt"
+        if not os.path.exists(config_path):
+            logger.error("NEAT config file not found. Create config/neat_config.txt")
+            state['neat_best_network'] = None
+            return state
 
-    config = neat.Config(
-        neat.DefaultGenome, neat.DefaultReproduction,
-        neat.DefaultSpeciesSet, neat.DefaultStagnation,
-        config_path
-    )
+        # Check if we have training data before starting expensive evolution
+        test_df = load_training_data()
+        if test_df.empty or len(test_df) < 50:
+            logger.warning("Not enough training data for NEAT evolution — skipping")
+            state['neat_best_network'] = {
+                "model_path": None,
+                "fitness": 0.0,
+                "generated_at": datetime.utcnow().isoformat(),
+                "description": "NEAT skipped — insufficient training data"
+            }
+            return state
 
-    # Create population
-    pop = neat.Population(config)
-    pop.add_reporter(neat.StdOutReporter(True))
-    pop.add_reporter(neat.StatisticsReporter())
-    pop.add_reporter(neat.Checkpointer(CHECKPOINT_FREQ))
+        config = neat.Config(
+            neat.DefaultGenome, neat.DefaultReproduction,
+            neat.DefaultSpeciesSet, neat.DefaultStagnation,
+            config_path
+        )
 
-    # Run evolution
-    winner = pop.run(eval_genomes, GENERATIONS)
+        # Create population
+        pop = neat.Population(config)
+        pop.add_reporter(neat.StdOutReporter(True))
+        pop.add_reporter(neat.StatisticsReporter())
+        pop.add_reporter(neat.Checkpointer(CHECKPOINT_FREQ))
 
-    # Save the best network
-    best_net = neat.nn.FeedForwardNetwork.create(winner, config)
-    
-    model_path = f"models/neat_best_{datetime.now().strftime('%Y%m%d_%H%M')}.pkl"
-    os.makedirs("models", exist_ok=True)
-    with open(model_path, "wb") as f:
-        pickle.dump({"network": best_net, "genome": winner, "config": config}, f)
+        # Run evolution
+        winner = pop.run(eval_genomes, GENERATIONS)
 
-    # Store in state for other nodes to use
-    state['neat_best_network'] = {
-        "model_path": model_path,
-        "fitness": float(winner.fitness),
-        "generated_at": datetime.utcnow().isoformat(),
-        "description": "NEAT-evolved network for directional + sizing decisions"
-    }
+        # Save the best network
+        best_net = neat.nn.FeedForwardNetwork.create(winner, config)
+        
+        model_path = f"models/neat_best_{datetime.now().strftime('%Y%m%d_%H%M')}.pkl"
+        os.makedirs("models", exist_ok=True)
+        with open(model_path, "wb") as f:
+            pickle.dump({"network": best_net, "genome": winner, "config": config}, f)
 
-    logger.info(f"✅ NEAT evolution complete. Best fitness: {winner.fitness:.3f}")
-    logger.info(f"Best network saved to {model_path}")
+        # Store in state for other nodes to use
+        state['neat_best_network'] = {
+            "model_path": model_path,
+            "fitness": float(winner.fitness),
+            "generated_at": datetime.utcnow().isoformat(),
+            "description": "NEAT-evolved network for directional + sizing decisions"
+        }
+
+        logger.info(f"✅ NEAT evolution complete. Best fitness: {winner.fitness:.3f}")
+        logger.info(f"Best network saved to {model_path}")
+
+    except Exception as e:
+        logger.error(f"❌ NEAT evolution failed: {e}")
+        state['neat_best_network'] = {
+            "model_path": None,
+            "fitness": 0.0,
+            "generated_at": datetime.utcnow().isoformat(),
+            "error": str(e)[:200],
+            "description": "NEAT evolution failed — see error"
+        }
 
     return state

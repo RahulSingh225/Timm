@@ -39,8 +39,21 @@ def options_builder_node(state: dict) -> dict:
     swing_analyses = state.get("swing_analyses", {})
     options_analyses = state.get("options_analyses", {})
     weights = state.get("strategy_weights", {})
+    detected_regime = state.get("detected_regime", {})
+    regime_label = detected_regime.get("regime_label", "UNKNOWN")
+    regime_confidence = detected_regime.get("confidence", 0)
+    defense_mode = state.get("defense_mode", False)
 
-    logging.info(f"📊 Building options scalp setups...")
+    # Regime-adjusted minimum confidence for options
+    min_confidence = 50
+    if regime_label == "HIGH_VOL_EXPANSION":
+        min_confidence = 65  # Options are expensive during vol spikes
+    elif regime_label == "TRENDING_BEAR":
+        min_confidence = 55
+    elif defense_mode:
+        min_confidence = 70
+
+    logging.info(f"📊 Building options scalp setups... Regime: {regime_label} | Min confidence: {min_confidence}%")
 
     setups = []
     evidence = []
@@ -50,8 +63,13 @@ def options_builder_node(state: dict) -> dict:
         confidence = setup.get("confidence", 0)
         signal_type = setup.get("signal_type", "NEUTRAL")
 
-        # Need at least 50% confidence for options scalps
-        if confidence < 50 or signal_type == "NEUTRAL":
+        # Need regime-adjusted confidence for options scalps
+        if confidence < min_confidence or signal_type == "NEUTRAL":
+            continue
+
+        # Defense mode / bear regime: only allow BUY_PUT
+        if defense_mode and signal_type == "BULLISH":
+            logging.info(f"  ⚠️ Skipping {symbol} BUY_CALL — defense mode active")
             continue
 
         # Get options data for this symbol
@@ -88,6 +106,7 @@ def options_builder_node(state: dict) -> dict:
 
         # ── Build evidence chain ─────────────────────────────
         trade_evidence = [
+            f"Regime: {regime_label} ({regime_confidence:.0%}) | Min conf: {min_confidence}%",
             f"Action: {option_action} on {symbol}",
             f"Swing: {signal_type} with {len(setup.get('signals', []))} signals, confidence {confidence}%",
             f"Options verdict: {opt.get('verdict')} | Max Pain: ₹{opt.get('max_pain')}",

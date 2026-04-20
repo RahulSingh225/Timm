@@ -154,24 +154,24 @@ LLM hypothesis generation fails with 404. Either:
 
 ### 2.1 Hidden Markov Model (HMM) Regime Detector
 
-#### [NEW] `backend/nodes/regime_detector_node.py`
-- [ ] Input features: ADX, VIX, OBV divergence, FII flow direction, ATR percentile
-- [ ] Use `hmmlearn.GaussianHMM` with 4 hidden states:
+#### [NEW] `backend/nodes/regime_detector_node.py` ✅
+- [x] Input features: ADX, VIX, OBV divergence, FII flow direction, ATR percentile
+- [x] Use `hmmlearn.GaussianHMM` with 4 hidden states:
   - **Trending Bull** (high ADX, low VIX, positive FII)
   - **Trending Bear** (high ADX, high VIX, negative FII)
   - **Mean-Reverting / Range** (low ADX, moderate VIX)
   - **High Volatility Expansion** (VIX spike, ATR breakout)
-- [ ] Output: Current regime label + transition probability matrix
-- [ ] Train on 3+ years of NIFTY daily data
-- [ ] Add to `TradingState` as `detected_regime` with confidence
+- [x] Output: Current regime label + transition probability matrix
+- [x] Train on 3+ years of NIFTY daily data
+- [x] Add to `TradingState` as `detected_regime` with confidence
 
-### 2.2 Integration
-- [ ] Place regime detector as **first node** in pre-market graph (before all analysis)
-- [ ] All downstream nodes condition on regime (e.g., critic applies different thresholds per regime)
+### 2.2 Integration ✅
+- [x] Place regime detector as **first node** in pre-market graph (before all analysis)
+- [x] All downstream nodes condition on regime (screener, critic, intraday builder, options builder)
 - [ ] Dashboard: Regime indicator widget with historical regime timeline chart
 
-### 2.3 Dependencies
-- [ ] Add `hmmlearn` to `requirements.txt`
+### 2.3 Dependencies ✅
+- [x] Add `hmmlearn` to `requirements.txt`
 
 ---
 

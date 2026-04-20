@@ -34,6 +34,10 @@ def adversarial_critic_node(state: dict) -> dict:
     options_setups = state.get("options_setups", [])
     market_regime = state.get("market_regime", "NEUTRAL")
     defense_mode = state.get("defense_mode", False)
+    detected_regime = state.get("detected_regime", {})
+    regime_label = detected_regime.get("regime_label", "UNKNOWN")
+    regime_confidence = detected_regime.get("confidence", 0)
+    transition_probs = detected_regime.get("transition_probs", {})
     
     all_setups = intraday_setups + options_setups
     debate_list = []
@@ -66,17 +70,24 @@ def adversarial_critic_node(state: dict) -> dict:
 Your job is to find reasons to REJECT a setup proposed by the primary builder agent.
 
 Market Regime: {market_regime}
+HMM-Detected Regime: {regime_label} (Confidence: {regime_confidence:.0%})
+Regime Transition Forecast: {json.dumps(transition_probs)}
 Defense Mode Active: {defense_mode}
 Stock: {symbol}
 Proposed Setup: {direction} @ Entry: {entry}, Target: {target}, SL: {sl} (Confidence {confidence}%)
 Primary Agent Evidence: {json.dumps(evidence_chain[:3])}
 Support/Resistance: {json.dumps(sr)}
 
-Evaluate this setup and construct a ruthless counter-argument based on the technicals and regime.
+Critically evaluate this setup. Pay special attention to:
+- Does the trade direction AGREE with the HMM regime? (e.g., going LONG in TRENDING_BEAR is high risk)
+- Is the regime likely to CHANGE soon? (check transition probabilities)
+- If defense mode is ON, should this trade be rejected outright?
+
 You must reply strictly in valid JSON format:
 {{
   "verdict": "APPROVE" | "VETO",
-  "counter_argument": "A punchy 1-2 sentence argument explaining the flaw in the Primary Agent's logic or pointing out high risk."
+  "counter_argument": "A punchy 1-2 sentence argument explaining the flaw in the Primary Agent's logic or pointing out high risk.",
+  "regime_risk": "LOW" | "MEDIUM" | "HIGH"
 }}
 """
 

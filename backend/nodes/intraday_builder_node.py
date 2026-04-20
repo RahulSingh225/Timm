@@ -30,8 +30,22 @@ def intraday_builder_node(state: dict) -> dict:
     """
     top_picks = state.get("top_picks", [])
     weights = state.get("strategy_weights", {})
+    detected_regime = state.get("detected_regime", {})
+    regime_label = detected_regime.get("regime_label", "UNKNOWN")
+    regime_confidence = detected_regime.get("confidence", 0)
+    defense_mode = state.get("defense_mode", False)
+
+    # Regime-adjusted minimum confidence
+    min_confidence = 40
+    if regime_label == "HIGH_VOL_EXPANSION":
+        min_confidence = 55  # Very selective during vol explosions
+    elif regime_label == "TRENDING_BEAR":
+        min_confidence = 50  # More selective in bear regimes
+    elif defense_mode:
+        min_confidence = 60  # Defense mode = maximum selectivity
 
     logging.info(f"📈 Building intraday equity setups from {len(top_picks)} scored symbols...")
+    logging.info(f"  Regime: {regime_label} ({regime_confidence:.0%}) | Min confidence: {min_confidence}%")
 
     setups = []
     evidence = []
@@ -40,8 +54,13 @@ def intraday_builder_node(state: dict) -> dict:
         confidence = setup.get("confidence", 0)
         signal_type = setup.get("signal_type", "NEUTRAL")
 
-        # Skip neutral or low-confidence
-        if signal_type == "NEUTRAL" or confidence < 40:
+        # Skip neutral or low-confidence (regime-adjusted threshold)
+        if signal_type == "NEUTRAL" or confidence < min_confidence:
+            continue
+
+        # In defense mode, only allow SHORT trades
+        if defense_mode and signal_type == "BULLISH":
+            logging.info(f"  ⚠️ Skipping {setup.get('symbol')} LONG — defense mode active")
             continue
 
         symbol = setup["symbol"]
@@ -58,6 +77,7 @@ def intraday_builder_node(state: dict) -> dict:
 
         # Build evidence chain for this trade
         trade_evidence = []
+        trade_evidence.append(f"Regime: {regime_label} ({regime_confidence:.0%}) → {state.get('market_regime', 'NEUTRAL')}")
         trade_evidence.append(f"Direction: {direction} based on {signal_type} signal confluence")
         trade_evidence.append(f"Trend: Daily={trend.get('daily')}, Micro={trend.get('micro')}, "
                               f"Alignment={trend.get('alignment')}")

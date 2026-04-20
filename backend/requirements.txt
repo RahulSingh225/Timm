@@ -31,3 +31,5 @@ gymnasium
 torch-geometric
 langchain-community
 hmmlearn
+arch
+pysr

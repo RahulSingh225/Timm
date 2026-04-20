@@ -80,3 +80,4 @@ class TradingState(TypedDict, total=False):
     sector_gnn_signal: dict
     options_gnn_signal: dict
     llm_generated_hypotheses: list[dict]
+    volatility_forecast: dict               # GARCH output {vol_1d, vol_5d, iv_rv_spread, expected_move}

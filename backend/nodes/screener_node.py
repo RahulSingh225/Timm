@@ -69,6 +69,25 @@ def screener_node(state: dict) -> dict:
     logging.info(f"  Market regime: {market_regime} | VIX: {vix}")
     logging.info(f"  Strategy weights loaded: {len(weights)} | Performance contexts: {len(recent_perf)}")
 
+    # ── Regime-Aware Scoring Parameters ────────────────────
+    detected_regime = state.get("detected_regime", {})
+    regime_label = detected_regime.get("regime_label", "UNKNOWN")
+    regime_confidence = detected_regime.get("confidence", 0)
+    transition_probs = detected_regime.get("transition_probs", {})
+
+    # Regime-specific thresholds
+    REGIME_CONFIG = {
+        "TRENDING_BULL":     {"long_boost": 10, "short_penalty": -10, "min_confidence": 35},
+        "TRENDING_BEAR":     {"long_boost": -10, "short_penalty": 10, "min_confidence": 50},
+        "MEAN_REVERTING":    {"long_boost": 0,  "short_penalty": 0,  "min_confidence": 45},
+        "HIGH_VOL_EXPANSION":{"long_boost": -15, "short_penalty": -5, "min_confidence": 60},
+    }
+    regime_cfg = REGIME_CONFIG.get(regime_label, {"long_boost": 0, "short_penalty": 0, "min_confidence": 40})
+
+    logging.info(f"  HMM Regime: {regime_label} (confidence: {regime_confidence:.0%}) | "
+                 f"Long boost: {regime_cfg['long_boost']}, Short adj: {regime_cfg['short_penalty']}")
+    logging.info(f"  Strategy weights loaded: {len(weights)} | Performance contexts: {len(recent_perf)}")
+
     scored_setups = []
     avoid_list = []
     evidence = []
@@ -141,6 +160,17 @@ def screener_node(state: dict) -> dict:
         if regime_perf:
             historical_wr = regime_perf.get("win_rate", 0.5)
             regime_bonus = int((historical_wr - 0.5) * 40)  # -20 to +20
+
+        # HMM regime-specific directional adjustment
+        if signal_type == "BULLISH":
+            regime_bonus += regime_cfg["long_boost"]
+        elif signal_type == "BEARISH":
+            regime_bonus += regime_cfg["short_penalty"]
+
+        # Regime transition risk: if high probability of flipping, reduce confidence
+        staying_prob = transition_probs.get(regime_label, 0)
+        if staying_prob < 0.5 and regime_confidence > 0.5:
+            regime_bonus -= 5  # Regime likely changing → less conviction
 
         # VIX context
         vix_bonus = 0
@@ -219,6 +249,8 @@ def screener_node(state: dict) -> dict:
             "symbol": symbol,
             "final_confidence": final_confidence,
             "breakdown": setup["confidence_breakdown"],
+            "regime_label": regime_label,
+            "regime_confidence": regime_confidence,
             "used_learned_weights": bool(weights),
             "confluence_sources": [
                 s for s in ["swing", "options", "vector"]

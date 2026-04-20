@@ -35,6 +35,8 @@ from nodes.llm_hypothesis_generator_node import llm_hypothesis_generator_node
 from nodes.marl_training_subgraph import marl_training_subgraph
 from nodes.sector_gnn_node import sector_gnn_node
 from nodes.options_gnn_node import options_gnn_node
+from nodes.regime_detector_node import regime_detector_node
+from feature_store import ensure_feature_tables
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - [GRAPH] - %(message)s')
 
@@ -61,6 +63,9 @@ def build_premarket_graph():
 
     graph = StateGraph(TradingState)
 
+    # ── Phase 0: Regime Detection (runs FIRST — conditions everything) ──
+    graph.add_node("regime_detector", regime_detector_node)
+
     # ── Phase 1: Market Context (sequential — each depends on previous) ──
     graph.add_node("global_cues", global_cues_node)
     graph.add_node("fii_dii", fii_dii_node)
@@ -78,8 +83,9 @@ def build_premarket_graph():
     graph.add_node("options_builder", options_builder_node)
     graph.add_node("head_analyst", head_analyst_node)
 
-    # ── Edges: Phase 1 sequential context loading ──
-    graph.set_entry_point("global_cues")
+    # ── Edges: Regime detection → Phase 1 sequential context loading ──
+    graph.set_entry_point("regime_detector")
+    graph.add_edge("regime_detector", "global_cues")
     graph.add_edge("global_cues", "fii_dii")
     graph.add_edge("fii_dii", "load_watchlist")
     graph.add_edge("load_watchlist", "temporal_context")
@@ -147,6 +153,9 @@ def build_training_graph():
     logging.info("Building ML Training graph...")
 
     graph = StateGraph(TradingState)
+
+    # Ensure feature store tables exist before any ML training
+    ensure_feature_tables()
 
     graph.add_node("llm_hypothesis_generator", llm_hypothesis_generator_node)
     graph.add_node("evolutionary_optimizer", evolutionary_optimizer_node)

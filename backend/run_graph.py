@@ -240,6 +240,8 @@ def run_premarket():
             "report_date": today,
             "current_phase": "premarket",
             "market_regime": "NEUTRAL",
+            "defense_mode": False,
+            "detected_regime": {},
             "global_cues": {},
             "sector_leaders": [],
             "watchlist": [],

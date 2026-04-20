@@ -26,7 +26,8 @@ class TradingState(TypedDict, total=False):
     report_date: str                        # YYYY-MM-DD
     market_regime: str                      # RISK_ON / RISK_OFF / NEUTRAL
     vix: Optional[float]
-    defense_mode: bool                      # If VIX > 30 and SPY < 200 SMA -> TRUE
+    defense_mode: bool                      # Auto-set by regime detector (VIX spike / bear)
+    detected_regime: dict                   # Full HMM output {regime_label, confidence, transition_probs}
     fii_net: Optional[str]                  # e.g., "+2340 Cr"
     dii_net: Optional[str]
     global_cues: dict                       # Full global context blob

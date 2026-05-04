@@ -104,6 +104,18 @@ JOB_REGISTRY = {
         "cron": {"hour": "16", "minute": "30", "day_of_week": "mon-fri"},
         "category": "agent",
     },
+    "nightly_training": {
+        "script": "run_training_pipeline.py",
+        "description": "Nightly ML Training Pipeline (GP + NEAT + GNN + MARL)",
+        "cron": {"hour": "2", "minute": "0"},
+        "category": "agent",
+    },
+    "weekly_validation": {
+        "script": "run_validation.py",
+        "description": "Weekly Walk-Forward Validation + Model Promotion",
+        "cron": {"day_of_week": "sun", "hour": "3", "minute": "0"},
+        "category": "agent",
+    },
 }
 
 # ─── In-memory run tracking ────────────────────────────────────

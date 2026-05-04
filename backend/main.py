@@ -419,6 +419,145 @@ def get_graph_runs():
         return {"error": str(e), "runs": []}
 
 
+# ═════════════════════════════════════════════════════════════
+#  ML DASHBOARD API ENDPOINTS (Phase 7)
+# ═════════════════════════════════════════════════════════════
+
+@app.get("/api/ml/regime")
+def ml_regime():
+    """Get current regime, history, and volatility forecast."""
+    try:
+        conn = psycopg2.connect(os.getenv("DATABASE_URL"))
+        cur = conn.cursor()
+
+        # Current regime
+        cur.execute("""
+            SELECT regime_id, regime_label, confidence, transition_probs, detected_at
+            FROM regime_history ORDER BY date DESC LIMIT 1
+        """)
+        row = cur.fetchone()
+        current = {
+            "regime_label": row[1] if row else "UNKNOWN",
+            "confidence": float(row[2]) if row else 0,
+            "transition_probs": row[3] if row and row[3] else [],
+            "detected_at": str(row[4]) if row else "",
+        }
+
+        # History (last 60 days)
+        cur.execute("""
+            SELECT date, regime_label, confidence
+            FROM regime_history ORDER BY date DESC LIMIT 60
+        """)
+        history = [{"date": str(r[0]), "regime_label": r[1], "confidence": float(r[2])} for r in cur.fetchall()]
+
+        # Volatility forecast
+        cur.execute("""
+            SELECT vol_1d, vol_5d, iv_rv_spread, iv_signal, vol_regime,
+                   expected_move_1d_pct, forecasted_at
+            FROM volatility_forecasts ORDER BY forecasted_at DESC LIMIT 1
+        """)
+        vrow = cur.fetchone()
+        volatility = None
+        if vrow:
+            volatility = {
+                "vol_1d": float(vrow[0]), "vol_5d": float(vrow[1]),
+                "iv_rv_spread": float(vrow[2] or 0),
+                "iv_signal": vrow[3], "vol_regime": vrow[4],
+                "expected_move_1d_pct": float(vrow[5] or 0),
+            }
+
+        cur.close()
+        conn.close()
+        return {"current": current, "history": history, "volatility": volatility}
+    except Exception as e:
+        return {"error": str(e), "current": {"regime_label": "UNKNOWN", "confidence": 0}}
+
+
+@app.get("/api/ml/backtest")
+def ml_backtest():
+    """Get backtest run results."""
+    try:
+        conn = psycopg2.connect(os.getenv("DATABASE_URL"))
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT id, start_date, end_date, total_days, total_trades,
+                   total_return, annualized_return, sharpe, calmar, max_drawdown,
+                   win_rate, profit_factor, avg_win, avg_loss,
+                   max_consecutive_losses, transaction_costs_total,
+                   regime_breakdown, equity_curve, monthly_returns, created_at
+            FROM backtest_runs ORDER BY id DESC LIMIT 10
+        """)
+        runs = []
+        for r in cur.fetchall():
+            runs.append({
+                "id": r[0], "start_date": str(r[1]), "end_date": str(r[2]),
+                "total_days": r[3], "total_trades": r[4],
+                "total_return": float(r[5] or 0), "annualized_return": float(r[6] or 0),
+                "sharpe": float(r[7] or 0), "calmar": float(r[8] or 0),
+                "max_drawdown": float(r[9] or 0),
+                "win_rate": float(r[10] or 0), "profit_factor": float(r[11] or 0),
+                "avg_win": float(r[12] or 0), "avg_loss": float(r[13] or 0),
+                "max_consecutive_losses": r[14] or 0,
+                "transaction_costs_total": float(r[15] or 0),
+                "regime_breakdown": r[16] or {},
+                "equity_curve": r[17] or [],
+                "monthly_returns": r[18] or {},
+                "created_at": str(r[19]),
+            })
+        cur.close()
+        conn.close()
+        return {"runs": runs}
+    except Exception as e:
+        return {"error": str(e), "runs": []}
+
+
+@app.get("/api/ml/training")
+def ml_training():
+    """Get model registry and training status."""
+    try:
+        from model_registry import list_models
+        models = list_models()
+        return {
+            "models": models,
+            "active_training": None,
+            "last_training": None,
+        }
+    except Exception as e:
+        return {"error": str(e), "models": []}
+
+
+@app.post("/api/ml/action")
+def ml_action(body: dict, background_tasks: BackgroundTasks):
+    """Trigger ML training or other actions."""
+    action = body.get("action")
+    if action == "run_training":
+        def run_training_graph():
+            try:
+                from langgraph_workflow import build_training_graph
+                graph = build_training_graph()
+                graph.invoke({
+                    "report_date": "", "profile": "training",
+                    "current_phase": "training", "market_regime": "NEUTRAL",
+                    "global_cues": {}, "watchlist": [], "swing_analyses": {},
+                    "options_analyses": {}, "vector_analyses": {},
+                    "strategy_weights": {}, "intraday_setups": [],
+                    "options_setups": [], "all_evidence": [],
+                    "top_picks": [], "detected_regime": {},
+                    "evolved_strategies": [], "neat_best_network": {},
+                    "marl_policy": {}, "sector_gnn_signal": {},
+                    "options_gnn_signal": {}, "llm_generated_hypotheses": [],
+                    "volatility_forecast": {},
+                })
+                logging.info("✅ Training graph completed")
+            except Exception as e:
+                logging.error(f"Training graph failed: {e}")
+
+        background_tasks.add_task(run_training_graph)
+        return {"status": "training_triggered"}
+    return {"error": "unknown_action"}
+
+
 if __name__ == "__main__":
     logging.info("Starting Web Server. Access the API at http://localhost:4500")
     uvicorn.run("main:app", host="0.0.0.0", port=4500)
+

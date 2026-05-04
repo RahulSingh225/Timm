@@ -1,7 +1,7 @@
 "use client"
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LayoutDashboard, BrainCircuit, Network, Route, Cpu, MessageSquare } from 'lucide-react';
+import { LayoutDashboard, BrainCircuit, Network, Route, Cpu, MessageSquare, Activity, BarChart3, Zap, Shield } from 'lucide-react';
 import clsx from 'clsx';
 
 const navItems = [
@@ -11,7 +11,11 @@ const navItems = [
   { name: 'Neural & MARL', href: '/ml/evolution', icon: Cpu },
   { name: 'Sector GNN Map', href: '/ml/sectors', icon: Network },
   { name: 'Chat Advisor', href: '/ml/chat', icon: MessageSquare },
-];
+  { name: '─────────', href: '#', icon: null, separator: true },
+  { name: 'Regime Detection', href: '/ml/regime', icon: Shield },
+  { name: 'Training Pipeline', href: '/ml/training', icon: Zap },
+  { name: 'Backtest Results', href: '/ml/backtest', icon: BarChart3 },
+] as const;
 
 export default function Sidebar() {
   const pathname = usePathname();
@@ -33,6 +37,9 @@ export default function Sidebar() {
         </div>
         <nav className="space-y-1">
           {navItems.map((item) => {
+            if ('separator' in item && item.separator) {
+              return <div key={item.name} className="border-t border-neutral-800 my-3 mx-2" />;
+            }
             const Icon = item.icon;
             const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
             return (
@@ -46,7 +53,7 @@ export default function Sidebar() {
                     : "text-neutral-400 hover:bg-neutral-800/50 hover:text-neutral-200"
                 )}
               >
-                <Icon size={18} className={isActive ? "text-indigo-400" : "text-neutral-500"} />
+                {Icon && <Icon size={18} className={isActive ? "text-indigo-400" : "text-neutral-500"} />}
                 {item.name}
               </Link>
             );

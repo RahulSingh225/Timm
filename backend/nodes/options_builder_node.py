@@ -55,6 +55,14 @@ def options_builder_node(state: dict) -> dict:
 
     logging.info(f"📊 Building options scalp setups... Regime: {regime_label} | Min confidence: {min_confidence}%")
 
+    # GARCH volatility forecast for expected move and IV signal
+    vol_forecast = state.get("volatility_forecast", {})
+    garch_expected_move = vol_forecast.get("expected_move", {})
+    garch_move_pct = garch_expected_move.get("expected_move_1d_pct", 0)
+    iv_signal = vol_forecast.get("iv_signal", "UNKNOWN")
+    vol_regime = vol_forecast.get("vol_regime", "UNKNOWN")
+    iv_rv_spread = vol_forecast.get("iv_rv_spread", 0)
+
     setups = []
     evidence = []
 
@@ -92,9 +100,12 @@ def options_builder_node(state: dict) -> dict:
         else:
             continue
 
-        # ── Strike selection logic (Near-to-Far OTM) ────────
+        # ── Strike selection logic (GARCH-enhanced) ─────────
         close_price = setup.get("close_price", 0)
-        expected_move = opt.get("expected_move_pct", 0)
+        opt_expected_move = opt.get("expected_move_pct", 0)
+
+        # Use GARCH expected move if available (more reliable than options chain estimate)
+        expected_move = garch_move_pct if garch_move_pct > 0 else opt_expected_move
 
         # Determine OTM range based on expected move
         if expected_move and expected_move > 2.0:
@@ -104,13 +115,22 @@ def options_builder_node(state: dict) -> dict:
         else:
             strike_approach = "FAR_OTM"    # Low expected move → far OTM (cheaper, more leverage)
 
+        # IV Premium penalty: if options are overpriced, reduce confidence
+        iv_adjustment = 0
+        if iv_signal == "IV_PREMIUM":
+            iv_adjustment = -5  # Options overpriced → less attractive
+        elif iv_signal == "IV_DISCOUNT":
+            iv_adjustment = 5   # Options cheap → more attractive
+
         # ── Build evidence chain ─────────────────────────────
         trade_evidence = [
             f"Regime: {regime_label} ({regime_confidence:.0%}) | Min conf: {min_confidence}%",
+            f"GARCH Vol: {vol_regime} | IV Signal: {iv_signal} (spread: {iv_rv_spread:+.2%})",
+            f"Expected Move: ±{expected_move:.1f}% (GARCH: {garch_move_pct:.1f}%, Chain: {opt_expected_move}%)",
             f"Action: {option_action} on {symbol}",
             f"Swing: {signal_type} with {len(setup.get('signals', []))} signals, confidence {confidence}%",
             f"Options verdict: {opt.get('verdict')} | Max Pain: ₹{opt.get('max_pain')}",
-            f"Expected move: ±{expected_move}% | Strike approach: {strike_approach}",
+            f"Strike approach: {strike_approach}",
             f"PCR: {opt.get('pcr_volume')} | Call Wall: {opt.get('call_wall')} | Put Wall: {opt.get('put_wall')}",
             f"Premium cap: ₹50/lot | SL: 30% of premium | Target: 50-100% of premium",
         ]

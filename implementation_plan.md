@@ -177,86 +177,86 @@ LLM hypothesis generation fails with 404. Either:
 
 ## Phase 3: Symbolic Regression / Expected Move Model (Weeks 3–5)
 
-### 3.1 Enhance GP Evolution Node
+### 3.1 Enhance GP Evolution Node ✅
 
 #### [MODIFY] `backend/nodes/evolutionary_optimizer_node.py`
-- [ ] Integrate `PySR` (symbolic regression) alongside DEAP for cleaner formula discovery
-- [ ] Target variable: Next-day % move (or next 15-min for intraday)
-- [ ] Input primitives: `raw_scalar`, `iv_adjusted_scalar`, `rsi`, `obv_slope`, `atr_pct`, `vwap_deviation`, `regime_label`
-- [ ] Fitness function: Information Coefficient (IC) — rank correlation between predicted and actual move
-- [ ] Store discovered formulas with human-readable expressions in `evolved_strategies` table
-- [ ] Add regime-specific evolution (evolve separate formulas per regime)
+- [x] Integrate `PySR` (symbolic regression) alongside DEAP for cleaner formula discovery
+- [x] Target variable: Next-day % move (or next 15-min for intraday)
+- [x] Input primitives: `raw_scalar`, `iv_adjusted_scalar`, `rsi`, `obv_slope`, `atr_pct`, `vwap_deviation`, `regime_label`
+- [x] Fitness function: Information Coefficient (IC) — rank correlation between predicted and actual move
+- [x] Store discovered formulas with human-readable expressions in `evolved_strategies` table
+- [x] Add regime-specific evolution (evolve separate formulas per regime)
 
-### 3.2 LLM-Guided Hypothesis Seeding
+### 3.2 LLM-Guided Hypothesis Seeding ✅
 
 #### [MODIFY] `backend/nodes/llm_hypothesis_generator_node.py`
-- [ ] Feed back top-performing formulas from `evolved_strategies` into the LLM prompt
-- [ ] Ask LLM to propose mutations and novel combinations
-- [ ] Implement RAG over `llm_hypotheses` table for historical context
-- [ ] Add fallback mode when Ollama is unavailable (use cached hypotheses from DB)
+- [x] Feed back top-performing formulas from `evolved_strategies` into the LLM prompt
+- [x] Ask LLM to propose mutations and novel combinations
+- [x] Implement RAG over `llm_hypotheses` table for historical context
+- [x] Add fallback mode when Ollama is unavailable (use cached hypotheses from DB)
 
-### 3.3 Dependencies
-- [ ] Add `pysr` to `requirements.txt`
+### 3.3 Dependencies ✅
+- [x] Add `pysr` to `requirements.txt`
 
 ---
 
 ## Phase 4: Volatility Forecasting (Weeks 4–6)
 
-### 4.1 GARCH Volatility Model
+### 4.1 GARCH Volatility Model ✅
 
 #### [NEW] `backend/nodes/volatility_forecast_node.py`
-- [ ] Implement GARCH(1,1) on NIFTY returns for daily volatility forecast
-- [ ] Compare realized vs implied volatility → IV premium/discount signal
-- [ ] Use `arch` library for estimation
-- [ ] Output: Forecasted 1D/5D volatility, IV-RV spread, vol regime
-- [ ] Feed into options builder for better strike selection and sizing
+- [x] Implement GARCH(1,1) on NIFTY returns for daily volatility forecast
+- [x] Compare realized vs implied volatility → IV premium/discount signal
+- [x] Use `arch` library for estimation
+- [x] Output: Forecasted 1D/5D volatility, IV-RV spread, vol regime
+- [x] Feed into options builder for better strike selection and sizing
 
-### 4.2 Integration
-- [ ] Add volatility forecast to `TradingState`
-- [ ] Options builder uses vol forecast for expected move calculation
+### 4.2 Integration ✅
+- [x] Add volatility forecast to `TradingState`
+- [x] Options builder uses vol forecast for expected move calculation
 - [ ] Critic penalizes setups where predicted vol disagrees with trade thesis
 
-### 4.3 Dependencies
-- [ ] Add `arch` to `requirements.txt`
+### 4.3 Dependencies ✅
+- [x] Add `arch` to `requirements.txt`
 
 ---
 
 ## Phase 5: Advanced ML Subgraph Hardening (Weeks 5–8)
 
-### 5.1 NEAT Neuroevolution Polish
+### 5.1 NEAT Neuroevolution Polish ✅
 
 #### [MODIFY] `backend/nodes/neat_neuroevolution_node.py`
-- [ ] Fix all `state.` → `state['']` dict access patterns
-- [ ] Add graceful fallback when no training data exists (return empty network, don't crash)
-- [ ] Implement fitness function tied to actual Sharpe ratio from simulated trades
-- [ ] Save/load best genomes across training runs (incremental evolution)
+- [x] Fix all `state.` → `state['']` dict access patterns
+- [x] Add graceful fallback when no training data exists (return empty network, don't crash)
+- [x] Implement fitness function tied to actual Sharpe ratio from simulated trades
+- [x] Save/load best genomes across training runs (incremental evolution)
 - [ ] Visualize evolved network topologies on dashboard
 
-### 5.2 MARL PPO Hardening
+### 5.2 MARL PPO Hardening ✅
 
 #### [MODIFY] `backend/nodes/marl_training_subgraph.py`
-- [ ] Migrate from `gym` to `gymnasium` (gym is unmaintained, breaks on NumPy 2.0)
-- [ ] Inject GNN-derived regime signals into observation space (already sketched)
-- [ ] Add transaction cost modeling in `trading_env.py` (brokerage + slippage + STT)
-- [ ] Reward shaping: Penalize drawdown, reward risk-adjusted returns (Calmar ratio)
-- [ ] Implement curriculum learning: Train on easy regimes first, then hard ones
-- [ ] Add position sizing as action output (not just direction)
+- [x] Migrate from `gym` to `gymnasium` (gym is unmaintained, breaks on NumPy 2.0)
+- [x] Inject GNN-derived regime signals into observation space (already sketched)
+- [x] Add transaction cost modeling in `trading_env.py` (brokerage + slippage + STT)
+- [x] Reward shaping: Penalize drawdown, reward risk-adjusted returns (Calmar ratio)
+- [x] Implement curriculum learning: Train on easy regimes first, then hard ones
+- [x] Add position sizing as action output (not just direction)
 
-### 5.3 Sector GNN Enhancement
+### 5.3 Sector GNN Enhancement ✅
 
 #### [MODIFY] `backend/nodes/sector_gnn_node.py`
-- [ ] Dynamic edge construction from rolling correlation matrix (not static adjacency)
-- [ ] Add FII/DII flow as edge weights (capital flow direction between sectors)
-- [ ] Temporal message passing (aggregate sector state over 5D/20D windows)
-- [ ] Output: Sector rotation forecast (which sectors to rotate into/out of)
+- [x] Dynamic edge construction from rolling correlation matrix (not static adjacency)
+- [x] Add FII/DII flow as edge weights (capital flow direction between sectors)
+- [x] Temporal message passing (aggregate sector state over 5D/20D windows)
+- [x] Output: Sector rotation forecast (which sectors to rotate into/out of)
 
-### 5.4 Options IV HeteroGNN
+### 5.4 Options IV HeteroGNN ✅
 
 #### [MODIFY] `backend/nodes/options_gnn_node.py`
-- [ ] Add real options chain data ingestion (not just mocked data)
-- [ ] Model strike-adjacency + calendar spread edges
-- [ ] Predict IV surface shift direction (expansion vs crush)
-- [ ] Integrate with volatility forecast node for combined signal
+- [x] Add real options chain data ingestion (not just mocked data)
+- [x] Model strike-adjacency + calendar spread edges
+- [x] Predict IV surface shift direction (expansion vs crush)
+- [x] Integrate with volatility forecast node for combined signal
 
 ---
 
@@ -265,66 +265,66 @@ LLM hypothesis generation fails with 404. Either:
 > [!CAUTION]
 > Without rigorous validation, all models will overfit. This phase is **non-negotiable** for production use.
 
-### 6.1 Walk-Forward Optimization
+### 6.1 Walk-Forward Optimization ✅
 
 #### [NEW] `backend/walk_forward_validator.py`
-- [ ] Implement rolling window train/validate/test splits
-- [ ] Train on 70% → Validate on 15% → Test on 15%
-- [ ] Report metrics per split: Sharpe, Calmar, max drawdown, profit factor, edge per trade
-- [ ] Regime-specific performance breakdown (don't average across regimes)
+- [x] Implement rolling window train/validate/test splits
+- [x] Train on 70% → Validate on 15% → Test on 15%
+- [x] Report metrics per split: Sharpe, Calmar, max drawdown, profit factor, edge per trade
+- [x] Regime-specific performance breakdown (don't average across regimes)
 
-### 6.2 Backtesting Metrics Enhancement
+### 6.2 Backtesting Metrics Enhancement ✅
 
 #### [MODIFY] `backend/simulate_graph.py`
-- [ ] Add transaction cost modeling (brokerage, STT, slippage estimate)
-- [ ] Track max drawdown, consecutive losses, win rate by regime
-- [ ] Generate equity curve and store in DB for dashboard visualization
-- [ ] Add out-of-sample metrics after training completes
+- [x] Add transaction cost modeling (brokerage, STT, slippage estimate)
+- [x] Track max drawdown, consecutive losses, win rate by regime
+- [x] Generate equity curve and store in DB for dashboard visualization
+- [x] Add out-of-sample metrics after training completes
 - [ ] Consider integrating `vectorbt` for vectorized backtesting speed
 
-### 6.3 Position Sizing Optimization
+### 6.3 Position Sizing Optimization ✅
 
 #### [NEW] `backend/nodes/position_sizing_node.py`
-- [ ] Kelly criterion implementation (with half-Kelly for safety)
-- [ ] ATR-based position sizing (already partially in swing_ta_node)
-- [ ] Maximum portfolio heat limit (e.g., 2% total risk at any time)
-- [ ] Regime-adjusted sizing (smaller in high-vol regimes)
+- [x] Kelly criterion implementation (with half-Kelly for safety)
+- [x] ATR-based position sizing (already partially in swing_ta_node)
+- [x] Maximum portfolio heat limit (e.g., 2% total risk at any time)
+- [x] Regime-adjusted sizing (smaller in high-vol regimes)
 
-### 6.4 Model Registry
+### 6.4 Model Registry ✅
 
 #### [NEW] `backend/model_registry.py`
-- [ ] Track model versions, training dates, and performance metrics
-- [ ] Auto-promote best models to production
-- [ ] Rollback capability if live performance degrades
-- [ ] Store model artifacts in S3 (or local `models/` directory)
+- [x] Track model versions, training dates, and performance metrics
+- [x] Auto-promote best models to production
+- [x] Rollback capability if live performance degrades
+- [x] Store model artifacts in S3 (or local `models/` directory)
 
 ---
 
 ## Phase 7: Dashboard & Observability (Weeks 8–12)
 
-### 7.1 ML Training Dashboard
+### 7.1 ML Training Dashboard ✅
 
 #### [NEW] `frontend/src/app/ml/training/page.tsx`
-- [ ] Real-time training progress via SSE
-- [ ] Loss curves, reward curves, fitness evolution charts
-- [ ] TensorBoard-like metric comparison across training runs
-- [ ] "Run Evolution Cycle" button wired to `/graph/training` endpoint
+- [x] Real-time training progress via SSE
+- [x] Loss curves, reward curves, fitness evolution charts
+- [x] TensorBoard-like metric comparison across training runs
+- [x] "Run Evolution Cycle" button wired to `/graph/training` endpoint
 
-### 7.2 Backtesting Results Dashboard
+### 7.2 Backtesting Results Dashboard ✅
 
 #### [NEW] `frontend/src/app/ml/backtest/page.tsx`
-- [ ] Equity curve visualization
-- [ ] Monthly returns heatmap
-- [ ] Drawdown chart
-- [ ] Regime-tagged trade scatter plot
-- [ ] Strategy comparison table (GP vs NEAT vs MARL vs ensemble)
+- [x] Equity curve visualization
+- [x] Monthly returns heatmap
+- [x] Drawdown chart
+- [x] Regime-tagged trade scatter plot
+- [x] Strategy comparison table (GP vs NEAT vs MARL vs ensemble)
 
-### 7.3 Regime & Model Dashboard
+### 7.3 Regime & Model Dashboard ✅
 
 #### [NEW] `frontend/src/app/ml/regime/page.tsx`
-- [ ] Current regime indicator with historical timeline
-- [ ] Regime transition probability heatmap
-- [ ] Model confidence over time chart
+- [x] Current regime indicator with historical timeline
+- [x] Regime transition probability heatmap
+- [x] Model confidence over time chart
 - [ ] Feature importance / SHAP values visualization
 
 ### 7.4 Evolved Strategies Gallery
@@ -332,7 +332,7 @@ LLM hypothesis generation fails with 404. Either:
 #### [NEW] `frontend/src/app/ml/strategies/page.tsx`
 - [ ] Display discovered GP formulas in human-readable math notation
 - [ ] NEAT network topology visualization
-- [ ] Strategy performance cards (Sharpe, win rate, regime affinity)
+- [x] Strategy performance cards (Sharpe, win rate, regime affinity)
 - [ ] "Promote to Live" button for HITL approval
 
 ---

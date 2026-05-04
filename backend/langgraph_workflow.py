@@ -36,6 +36,8 @@ from nodes.marl_training_subgraph import marl_training_subgraph
 from nodes.sector_gnn_node import sector_gnn_node
 from nodes.options_gnn_node import options_gnn_node
 from nodes.regime_detector_node import regime_detector_node
+from nodes.volatility_forecast_node import volatility_forecast_node
+from nodes.position_sizing_node import position_sizing_node
 from feature_store import ensure_feature_tables
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - [GRAPH] - %(message)s')
@@ -63,8 +65,9 @@ def build_premarket_graph():
 
     graph = StateGraph(TradingState)
 
-    # ── Phase 0: Regime Detection (runs FIRST — conditions everything) ──
+    # ── Phase 0: Regime Detection + Vol Forecast (run FIRST — condition everything) ──
     graph.add_node("regime_detector", regime_detector_node)
+    graph.add_node("volatility_forecast", volatility_forecast_node)
 
     # ── Phase 1: Market Context (sequential — each depends on previous) ──
     graph.add_node("global_cues", global_cues_node)
@@ -81,11 +84,13 @@ def build_premarket_graph():
     graph.add_node("screener", screener_node)
     graph.add_node("intraday_builder", intraday_builder_node)
     graph.add_node("options_builder", options_builder_node)
+    graph.add_node("position_sizing", position_sizing_node)
     graph.add_node("head_analyst", head_analyst_node)
 
-    # ── Edges: Regime detection → Phase 1 sequential context loading ──
+    # ── Edges: Regime → Vol Forecast → Phase 1 sequential context loading ──
     graph.set_entry_point("regime_detector")
-    graph.add_edge("regime_detector", "global_cues")
+    graph.add_edge("regime_detector", "volatility_forecast")
+    graph.add_edge("volatility_forecast", "global_cues")
     graph.add_edge("global_cues", "fii_dii")
     graph.add_edge("fii_dii", "load_watchlist")
     graph.add_edge("load_watchlist", "temporal_context")
@@ -106,9 +111,10 @@ def build_premarket_graph():
     graph.add_edge("screener", "intraday_builder")
     graph.add_edge("screener", "options_builder")
 
-    # ── Edges: Converge to LLM synthesis ──
-    graph.add_edge("intraday_builder", "head_analyst")
-    graph.add_edge("options_builder", "head_analyst")
+    # ── Edges: Converge to position sizing then LLM synthesis ──
+    graph.add_edge("intraday_builder", "position_sizing")
+    graph.add_edge("options_builder", "position_sizing")
+    graph.add_edge("position_sizing", "head_analyst")
     graph.add_edge("head_analyst", END)
 
     compiled = graph.compile()
